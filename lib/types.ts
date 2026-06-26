@@ -24,6 +24,7 @@ export interface Booking {
   client_id: string;
   start_at: string;
   end_at: string;
+  slot_number: number;
   statut: BookingStatus;
   stripe_payment_id: string | null;
   created_at: string;
