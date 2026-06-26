@@ -1,0 +1,109 @@
+import { supabaseAdmin } from "./supabase-admin";
+import { computeAvailableSlots, findFreeSlotNumber, type AvailableSlot } from "./availability";
+import type { AdminSettings, Service } from "./types";
+
+/**
+ * Récupère les créneaux disponibles pour un service donné à une date donnée.
+ * Orchestre les appels DB puis délègue le calcul à la logique pure.
+ */
+export async function getAvailableSlots(
+  serviceId: string,
+  date: Date
+): Promise<AvailableSlot[]> {
+  const [settings, service, bookings, externals] = await Promise.all([
+    fetchSettings(),
+    fetchService(serviceId),
+    fetchActiveBookingsForDate(date),
+    fetchExternalBookingsForDate(date),
+  ]);
+
+  if (!settings || !service) {
+    return [];
+  }
+
+  return computeAvailableSlots({
+    date,
+    serviceDurationMinutes: service.duree_minutes,
+    settings,
+    existingBookings: bookings.map((b) => ({
+      start: new Date(b.start_at),
+      end: new Date(b.end_at),
+    })),
+    externalBookings: externals.map((e) => ({
+      start: new Date(e.start_at),
+      end: new Date(e.end_at),
+    })),
+    now: new Date(),
+  });
+}
+
+/**
+ * Attribue un slot_number pour un nouveau booking.
+ * Retourne null si aucun slot libre (créneau plein).
+ */
+export async function assignSlotNumber(
+  startAt: Date,
+  endAt: Date
+): Promise<number | null> {
+  const settings = await fetchSettings();
+  if (!settings) return null;
+
+  const { data: bookings } = await supabaseAdmin
+    .from("bookings")
+    .select("start_at, end_at, slot_number")
+    .in("statut", ["pending", "confirmed"])
+    .lt("start_at", endAt.toISOString())
+    .gt("end_at", startAt.toISOString());
+
+  return findFreeSlotNumber(
+    { start: startAt, end: endAt },
+    (bookings ?? []).map((b) => ({
+      start: new Date(b.start_at),
+      end: new Date(b.end_at),
+      slot_number: b.slot_number,
+    })),
+    settings.nb_praticiens,
+    settings.battement_minutes
+  );
+}
+
+async function fetchSettings(): Promise<AdminSettings | null> {
+  const { data } = await supabaseAdmin.from("admin_settings").select("*").limit(1).single();
+  return data as AdminSettings | null;
+}
+
+async function fetchService(serviceId: string): Promise<Service | null> {
+  const { data } = await supabaseAdmin.from("services").select("*").eq("id", serviceId).single();
+  return data as Service | null;
+}
+
+async function fetchActiveBookingsForDate(date: Date) {
+  const dayStart = new Date(date);
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setUTCHours(23, 59, 59, 999);
+
+  const { data } = await supabaseAdmin
+    .from("bookings")
+    .select("start_at, end_at")
+    .in("statut", ["pending", "confirmed"])
+    .lt("start_at", dayEnd.toISOString())
+    .gt("end_at", dayStart.toISOString());
+
+  return data ?? [];
+}
+
+async function fetchExternalBookingsForDate(date: Date) {
+  const dayStart = new Date(date);
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setUTCHours(23, 59, 59, 999);
+
+  const { data } = await supabaseAdmin
+    .from("external_bookings")
+    .select("start_at, end_at")
+    .lt("start_at", dayEnd.toISOString())
+    .gt("end_at", dayStart.toISOString());
+
+  return data ?? [];
+}
