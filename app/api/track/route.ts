@@ -9,6 +9,8 @@ const ALLOWED_EVENTS = new Set([
   "details_started",
   "booking_submitted",
   "slot_expired",
+  "payment_initiated",
+  "booking_confirmed",
 ]);
 
 export async function POST(request: NextRequest) {

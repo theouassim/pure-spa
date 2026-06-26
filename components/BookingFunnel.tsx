@@ -249,6 +249,7 @@ export function BookingFunnel() {
           service={selectedService}
           slot={selectedSlot}
           contact={contact}
+          onSlotExpired={handleBackToSlots}
         />
       )}
     </div>

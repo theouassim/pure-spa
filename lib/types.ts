@@ -1,4 +1,5 @@
 export type BookingStatus = "pending" | "confirmed" | "cancelled";
+export type StatutPaiement = "paye_en_ligne" | "en_attente" | "paye_sur_place";
 
 export interface Service {
   id: string;
@@ -28,6 +29,8 @@ export interface Booking {
   end_at: string;
   slot_number: number;
   statut: BookingStatus;
+  montant: number | null;
+  statut_paiement: StatutPaiement;
   stripe_payment_id: string | null;
   created_at: string;
 }
@@ -63,5 +66,7 @@ export interface AdminSettings {
   conditions_annulation: string;
   telephone_contact: string;
   timezone: string;
+  mode_paiement: "total" | "acompte";
+  acompte_pourcentage: number;
   updated_at: string;
 }

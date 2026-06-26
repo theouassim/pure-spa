@@ -40,6 +40,8 @@ const BASE_SETTINGS: AdminSettings = {
   conditions_annulation: "",
   telephone_contact: "",
   timezone: "Europe/Paris",
+  mode_paiement: "total",
+  acompte_pourcentage: 30,
   updated_at: "",
 };
 
