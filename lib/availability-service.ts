@@ -1,5 +1,10 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { computeAvailableSlots, findFreeSlotNumber, type AvailableSlot } from "./availability";
+import {
+  computeAvailableSlots,
+  findFreeSlotNumber,
+  getDayBoundsUTC,
+  type AvailableSlot,
+} from "./availability";
 import type { AdminSettings, Service } from "./types";
 
 /**
@@ -10,16 +15,19 @@ export async function getAvailableSlots(
   serviceId: string,
   date: Date
 ): Promise<AvailableSlot[]> {
-  const [settings, service, bookings, externals] = await Promise.all([
-    fetchSettings(),
-    fetchService(serviceId),
-    fetchActiveBookingsForDate(date),
-    fetchExternalBookingsForDate(date),
-  ]);
+  const settings = await fetchSettings();
+  if (!settings) return [];
 
-  if (!settings || !service) {
-    return [];
-  }
+  const service = await fetchService(serviceId);
+  if (!service) return [];
+
+  // Bornes de la journée en UTC (heure locale institut → UTC) + marge battement
+  const bounds = getDayBoundsUTC(date, settings.timezone, settings.battement_minutes);
+
+  const [bookings, externals] = await Promise.all([
+    fetchActiveBookingsInRange(bounds.start, bounds.end),
+    fetchExternalBookingsInRange(bounds.start, bounds.end),
+  ]);
 
   return computeAvailableSlots({
     date,
@@ -48,12 +56,16 @@ export async function assignSlotNumber(
   const settings = await fetchSettings();
   if (!settings) return null;
 
+  const marginMs = settings.battement_minutes * 60_000;
+  const queryStart = new Date(startAt.getTime() - marginMs);
+  const queryEnd = new Date(endAt.getTime() + marginMs);
+
   const { data: bookings } = await supabaseAdmin
     .from("bookings")
     .select("start_at, end_at, slot_number")
     .in("statut", ["pending", "confirmed"])
-    .lt("start_at", endAt.toISOString())
-    .gt("end_at", startAt.toISOString());
+    .lt("start_at", queryEnd.toISOString())
+    .gt("end_at", queryStart.toISOString());
 
   return findFreeSlotNumber(
     { start: startAt, end: endAt },
@@ -77,33 +89,23 @@ async function fetchService(serviceId: string): Promise<Service | null> {
   return data as Service | null;
 }
 
-async function fetchActiveBookingsForDate(date: Date) {
-  const dayStart = new Date(date);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(date);
-  dayEnd.setUTCHours(23, 59, 59, 999);
-
+async function fetchActiveBookingsInRange(start: Date, end: Date) {
   const { data } = await supabaseAdmin
     .from("bookings")
     .select("start_at, end_at")
     .in("statut", ["pending", "confirmed"])
-    .lt("start_at", dayEnd.toISOString())
-    .gt("end_at", dayStart.toISOString());
+    .lt("start_at", end.toISOString())
+    .gt("end_at", start.toISOString());
 
   return data ?? [];
 }
 
-async function fetchExternalBookingsForDate(date: Date) {
-  const dayStart = new Date(date);
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const dayEnd = new Date(date);
-  dayEnd.setUTCHours(23, 59, 59, 999);
-
+async function fetchExternalBookingsInRange(start: Date, end: Date) {
   const { data } = await supabaseAdmin
     .from("external_bookings")
     .select("start_at, end_at")
-    .lt("start_at", dayEnd.toISOString())
-    .gt("end_at", dayStart.toISOString());
+    .lt("start_at", end.toISOString())
+    .gt("end_at", start.toISOString());
 
   return data ?? [];
 }

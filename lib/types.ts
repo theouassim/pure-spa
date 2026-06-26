@@ -59,5 +59,6 @@ export interface AdminSettings {
   delai_min_avant_rdv: number;
   battement_minutes: number;
   conditions_annulation: string;
+  timezone: string;
   updated_at: string;
 }

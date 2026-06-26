@@ -1,29 +1,31 @@
 import { describe, it, expect } from "vitest";
-import { computeAvailableSlots, findFreeSlotNumber, type TimeRange } from "../availability";
+import {
+  computeAvailableSlots,
+  findFreeSlotNumber,
+  getDayBoundsUTC,
+  type TimeRange,
+} from "../availability";
 import type { AdminSettings } from "../types";
 
 // ============================================================
 // Helpers
 // ============================================================
 
-function makeDate(dateStr: string): Date {
-  return new Date(dateStr + "T00:00:00.000Z");
+function utc(isoString: string): Date {
+  return new Date(isoString);
 }
 
-function makeTime(dateStr: string, time: string): Date {
-  return new Date(`${dateStr}T${time}:00.000Z`);
+function makeRange(startISO: string, endISO: string): TimeRange {
+  return { start: utc(startISO), end: utc(endISO) };
 }
 
-function makeRange(dateStr: string, startTime: string, endTime: string): TimeRange {
-  return {
-    start: makeTime(dateStr, startTime),
-    end: makeTime(dateStr, endTime),
-  };
-}
+// Mercredi 15 janvier 2025 — HEURE D'HIVER (CET = UTC+1)
+// 09:00 Paris = 08:00 UTC, 17:00 Paris = 16:00 UTC
+const WINTER_DATE = utc("2025-01-15T00:00:00.000Z");
 
-// Mercredi 2025-01-15 (jour=3)
-const TEST_DATE = "2025-01-15";
-const TEST_DATE_OBJ = makeDate(TEST_DATE);
+// Mercredi 16 juillet 2025 — HEURE D'ÉTÉ (CEST = UTC+2)
+// 09:00 Paris = 07:00 UTC, 17:00 Paris = 15:00 UTC
+const SUMMER_DATE = utc("2025-07-16T00:00:00.000Z");
 
 const BASE_SETTINGS: AdminSettings = {
   id: "test",
@@ -36,50 +38,150 @@ const BASE_SETTINGS: AdminSettings = {
   delai_min_avant_rdv: 60,
   battement_minutes: 15,
   conditions_annulation: "",
+  timezone: "Europe/Paris",
   updated_at: "",
 };
 
-// "now" bien avant la journée de test pour ne pas déclencher le délai min
-const FAR_PAST = new Date("2025-01-14T08:00:00.000Z");
+const FAR_PAST = utc("2025-01-10T00:00:00.000Z");
 
 // ============================================================
-// Tests
+// Tests — Fuseau horaire hiver / été
 // ============================================================
 
-describe("computeAvailableSlots", () => {
-  it("génère les créneaux candidats selon les horaires (pas de booking)", () => {
-    const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
-      serviceDurationMinutes: 60,
-      settings: BASE_SETTINGS,
-      existingBookings: [],
-      externalBookings: [],
-      now: FAR_PAST,
+describe("computeAvailableSlots — timezone Europe/Paris", () => {
+  describe("heure d'hiver (CET, UTC+1)", () => {
+    it("premier créneau à 08:00 UTC (= 09:00 Paris hiver)", () => {
+      const slots = computeAvailableSlots({
+        date: WINTER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      expect(slots.length).toBeGreaterThan(0);
+      // 09:00 Paris en hiver = 08:00 UTC
+      expect(slots[0].start).toEqual(utc("2025-01-15T08:00:00.000Z"));
+      expect(slots[0].end).toEqual(utc("2025-01-15T09:00:00.000Z"));
     });
 
-    // 09:00-17:00 avec pause 12:00-13:00 = 7h dispo
-    // Créneaux de 60min au pas de 15min :
-    // 09:00, 09:15, ..., 11:00 (fin 12:00) — le créneau 11:15 (fin 12:15) chevauche la pause
-    // 13:00, 13:15, ..., 16:00 (fin 17:00)
-    // Avant pause: slots dont [start, start+60min) ne chevauche pas [12:00, 13:00)
-    //   = 09:00 à 11:00 (start <= 11:00 car end=12:00 ne chevauche pas [12:00,13:00) en semi-ouvert)
-    //   Attention: [11:00, 12:00) ne chevauche PAS [12:00, 13:00) car 12:00 < 13:00 AND 12:00 < 12:00 = false
-    //   Mais [11:15, 12:15) chevauche [12:00, 13:00) car 11:15 < 13:00 AND 12:00 < 12:15
-    //   Donc avant pause: 09:00, 09:15, ..., 11:00 = 9 créneaux
-    // Après pause: [13:00, 14:00) ok, ..., [16:00, 17:00) ok
-    //   = 13:00, 13:15, ..., 16:00 = 13 créneaux
-    // Total = 9 + 13 = 22
+    it("dernier créneau finit à 16:00 UTC (= 17:00 Paris hiver)", () => {
+      const slots = computeAvailableSlots({
+        date: WINTER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
 
-    expect(slots.length).toBe(22);
-    expect(slots[0].start).toEqual(makeTime(TEST_DATE, "09:00"));
-    expect(slots[0].end).toEqual(makeTime(TEST_DATE, "10:00"));
-    expect(slots[slots.length - 1].start).toEqual(makeTime(TEST_DATE, "16:00"));
-    expect(slots[slots.length - 1].end).toEqual(makeTime(TEST_DATE, "17:00"));
+      const last = slots[slots.length - 1];
+      // 16:00 Paris = 15:00 UTC, fin = 16:00 UTC (= 17:00 Paris)
+      expect(last.start).toEqual(utc("2025-01-15T15:00:00.000Z"));
+      expect(last.end).toEqual(utc("2025-01-15T16:00:00.000Z"));
+    });
+
+    it("la pause 12:00-13:00 Paris se traduit en 11:00-12:00 UTC en hiver", () => {
+      const slots = computeAvailableSlots({
+        date: WINTER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      // Aucun créneau ne doit chevaucher [11:00, 12:00) UTC
+      for (const slot of slots) {
+        const overlaps =
+          slot.start.getTime() < utc("2025-01-15T12:00:00.000Z").getTime() &&
+          utc("2025-01-15T11:00:00.000Z").getTime() < slot.end.getTime();
+        expect(overlaps).toBe(false);
+      }
+    });
   });
 
+  describe("heure d'été (CEST, UTC+2)", () => {
+    it("premier créneau à 07:00 UTC (= 09:00 Paris été)", () => {
+      const slots = computeAvailableSlots({
+        date: SUMMER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      expect(slots.length).toBeGreaterThan(0);
+      // 09:00 Paris en été = 07:00 UTC
+      expect(slots[0].start).toEqual(utc("2025-07-16T07:00:00.000Z"));
+      expect(slots[0].end).toEqual(utc("2025-07-16T08:00:00.000Z"));
+    });
+
+    it("dernier créneau finit à 15:00 UTC (= 17:00 Paris été)", () => {
+      const slots = computeAvailableSlots({
+        date: SUMMER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      const last = slots[slots.length - 1];
+      // 16:00 Paris = 14:00 UTC, fin = 15:00 UTC (= 17:00 Paris)
+      expect(last.start).toEqual(utc("2025-07-16T14:00:00.000Z"));
+      expect(last.end).toEqual(utc("2025-07-16T15:00:00.000Z"));
+    });
+
+    it("la pause 12:00-13:00 Paris se traduit en 10:00-11:00 UTC en été", () => {
+      const slots = computeAvailableSlots({
+        date: SUMMER_DATE,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      for (const slot of slots) {
+        const overlaps =
+          slot.start.getTime() < utc("2025-07-16T11:00:00.000Z").getTime() &&
+          utc("2025-07-16T10:00:00.000Z").getTime() < slot.end.getTime();
+        expect(overlaps).toBe(false);
+      }
+    });
+  });
+
+  describe("jour de la semaine en heure locale", () => {
+    it("un samedi soir UTC qui est déjà dimanche à Paris ne génère rien", () => {
+      // Samedi 18 janvier 2025, 23:30 UTC = Dimanche 19 janvier 00:30 Paris (hiver)
+      // Si on demande les créneaux pour cet instant en tant que "date",
+      // le jour local est dimanche (7) qui n'est pas travaillé
+      const lateSaturdayUTC = utc("2025-01-18T23:30:00.000Z");
+      const slots = computeAvailableSlots({
+        date: lateSaturdayUTC,
+        serviceDurationMinutes: 60,
+        settings: BASE_SETTINGS,
+        existingBookings: [],
+        externalBookings: [],
+        now: FAR_PAST,
+      });
+
+      expect(slots).toHaveLength(0);
+    });
+  });
+});
+
+// ============================================================
+// Tests — Logique métier (avec fuseau)
+// ============================================================
+
+describe("computeAvailableSlots — logique métier", () => {
   it("retourne vide pour un jour non travaillé", () => {
-    // Dimanche = jour 7, pas dans jours_travailles
-    const sunday = new Date("2025-01-19T00:00:00.000Z");
+    // Dimanche 19 jan 2025 à midi Paris → jour 7, pas dans jours_travailles
+    const sunday = utc("2025-01-19T11:00:00.000Z"); // 12:00 Paris
     const slots = computeAvailableSlots({
       date: sunday,
       serviceDurationMinutes: 60,
@@ -93,10 +195,11 @@ describe("computeAvailableSlots", () => {
   });
 
   it("exclut les créneaux avant le délai minimum", () => {
-    // now = 10:00, délai = 60min → créneaux avant 11:00 exclus
-    const now = makeTime(TEST_DATE, "10:00");
+    // now = 10:00 Paris (09:00 UTC en hiver), délai = 60min
+    // → créneaux avant 11:00 Paris (10:00 UTC) exclus
+    const now = utc("2025-01-15T09:00:00.000Z"); // 10:00 Paris
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [],
@@ -104,16 +207,18 @@ describe("computeAvailableSlots", () => {
       now,
     });
 
+    // Tous les créneaux doivent commencer >= 10:00 UTC (= 11:00 Paris)
     for (const slot of slots) {
-      expect(slot.start.getTime()).toBeGreaterThanOrEqual(makeTime(TEST_DATE, "11:00").getTime());
+      expect(slot.start.getTime()).toBeGreaterThanOrEqual(utc("2025-01-15T10:00:00.000Z").getTime());
     }
   });
 
-  it("exclut un créneau quand un booking le chevauche (1 praticienne)", () => {
-    // Booking existant 10:00-11:00 + battement 15min → occupe [09:45, 11:15)
-    const booking = makeRange(TEST_DATE, "10:00", "11:00");
+  it("booking bloque un créneau (chevauchement avec battement)", () => {
+    // Booking 10:00-11:00 Paris (09:00-10:00 UTC hiver) + battement 15min
+    // → effectif [08:45, 10:15) UTC
+    const booking = makeRange("2025-01-15T09:00:00.000Z", "2025-01-15T10:00:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [booking],
@@ -121,21 +226,21 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    // Aucun créneau dont la plage empiète sur [09:45, 11:15) ne doit apparaître
     for (const slot of slots) {
       const inConflict =
-        slot.start.getTime() < makeTime(TEST_DATE, "11:15").getTime() &&
-        makeTime(TEST_DATE, "09:45").getTime() < slot.end.getTime();
+        slot.start.getTime() < utc("2025-01-15T10:15:00.000Z").getTime() &&
+        utc("2025-01-15T08:45:00.000Z").getTime() < slot.end.getTime();
       expect(inConflict).toBe(false);
     }
   });
 
-  it("gère le chevauchement partiel", () => {
-    // Booking 09:30-10:30 + battement 15min → occupe [09:15, 10:45)
-    // Le créneau 09:00-10:00 empiète sur [09:15, 10:45) car 09:00 < 10:45 AND 09:15 < 10:00
-    const booking = makeRange(TEST_DATE, "09:30", "10:30");
+  it("chevauchement partiel : un créneau empiétant est exclu", () => {
+    // Booking 09:30-10:30 Paris (08:30-09:30 UTC) + battement 15min
+    // → effectif [08:15, 09:45) UTC
+    // Le créneau 09:00 Paris (08:00 UTC, fin 09:00 UTC) empiète car 08:00 < 09:45 AND 08:15 < 09:00
+    const booking = makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:30:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [booking],
@@ -143,18 +248,20 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    const nineAm = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "09:00").getTime());
-    expect(nineAm).toBeUndefined();
+    const firstSlot = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(firstSlot).toBeUndefined();
   });
 
-  it("créneaux collés : respecte le battement entre prestations", () => {
-    // Booking 09:00-10:00, battement = 15min
-    // Le créneau 10:00-11:00 empiète sur [08:45, 10:15) car 10:00 < 10:15
-    // Le créneau 10:15-11:15 n'empiète pas : 10:15 >= 10:15 en semi-ouvert?
-    // [10:15, 11:15) vs effectif [08:45, 10:15) → 10:15 < 10:15 = false → pas de conflit
-    const booking = makeRange(TEST_DATE, "09:00", "10:00");
+  it("battement : créneau collé bloqué, après battement libre", () => {
+    // Booking 09:00-10:00 Paris (08:00-09:00 UTC) + battement 15min
+    // → effectif [07:45, 09:15) UTC
+    // Créneau 10:00 Paris (09:00 UTC, fin 10:00) : 09:00 < 09:15 → bloqué
+    // Créneau 10:15 Paris (09:15 UTC, fin 10:15) : 09:15 < 09:15 → faux → libre
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [booking],
@@ -162,19 +269,21 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    const at1000 = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "10:00").getTime());
-    const at1015 = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "10:15").getTime());
-
-    expect(at1000).toBeUndefined(); // bloqué par battement
-    expect(at1015).toBeDefined(); // premier créneau libre après battement
+    const at0900utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    const at0915utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:15:00.000Z").getTime()
+    );
+    expect(at0900utc).toBeUndefined();
+    expect(at0915utc).toBeDefined();
   });
 
-  it("plusieurs praticiens : autorise N bookings en parallèle", () => {
+  it("plusieurs praticiens : 1 occupation < capacité → dispo", () => {
     const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
-    // Un seul booking à 09:00-10:00 → encore un slot libre (count=1 < 2)
-    const booking = makeRange(TEST_DATE, "09:00", "10:00");
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings,
       existingBookings: [booking],
@@ -182,23 +291,21 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    // Le créneau 09:00-10:00 doit être encore dispo (1 occupation < 2 praticiens)
-    // Mais attention au battement : le candidat [09:00, 10:00) vs effectif [08:45, 10:15)
-    // Le candidat 09:00 < 10:15 AND 08:45 < 10:00 → oui overlap
-    // Donc le créneau 09:00 est compté comme 1 occupation, 1 < 2 → disponible
-    const nineAm = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "09:00").getTime());
-    expect(nineAm).toBeDefined();
+    // 09:00 Paris (08:00 UTC) toujours dispo (1 < 2)
+    const firstSlot = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(firstSlot).toBeDefined();
   });
 
-  it("plusieurs praticiens : bloque quand capacité atteinte", () => {
+  it("plusieurs praticiens : capacité atteinte → bloqué", () => {
     const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
-    // Deux bookings à 09:00-10:00 → count=2 >= 2 → plein
     const bookings = [
-      makeRange(TEST_DATE, "09:00", "10:00"),
-      makeRange(TEST_DATE, "09:00", "10:00"),
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
     ];
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings,
       existingBookings: bookings,
@@ -206,15 +313,17 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    const nineAm = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "09:00").getTime());
-    expect(nineAm).toBeUndefined();
+    const firstSlot = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(firstSlot).toBeUndefined();
   });
 
   it("external_bookings (Planity) bloquent un créneau", () => {
-    // Un external_booking 14:00-15:00 bloque exactement comme un booking interne
-    const external = makeRange(TEST_DATE, "14:00", "15:00");
+    // External 14:00-15:00 Paris (13:00-14:00 UTC hiver)
+    const external = makeRange("2025-01-15T13:00:00.000Z", "2025-01-15T14:00:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [],
@@ -222,19 +331,19 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    // Le créneau 14:00-15:00 ne doit pas apparaître (1 occupation >= 1 praticien)
-    const at1400 = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "14:00").getTime());
-    expect(at1400).toBeUndefined();
+    const at1300utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T13:00:00.000Z").getTime()
+    );
+    expect(at1300utc).toBeUndefined();
   });
 
-  it("booking + external_bookings se cumulent vers la capacité", () => {
+  it("booking + external se cumulent vers la capacité", () => {
     const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
-    // 1 booking interne + 1 external au même créneau → count=2 >= 2 → plein
-    const booking = makeRange(TEST_DATE, "14:00", "15:00");
-    const external = makeRange(TEST_DATE, "14:00", "15:00");
+    const booking = makeRange("2025-01-15T13:00:00.000Z", "2025-01-15T14:00:00.000Z");
+    const external = makeRange("2025-01-15T13:00:00.000Z", "2025-01-15T14:00:00.000Z");
 
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings,
       existingBookings: [booking],
@@ -242,15 +351,17 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    const at1400 = slots.find((s) => s.start.getTime() === makeTime(TEST_DATE, "14:00").getTime());
-    expect(at1400).toBeUndefined();
+    const at1300utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T13:00:00.000Z").getTime()
+    );
+    expect(at1300utc).toBeUndefined();
   });
 
-  it("cas limite : tout plein (chaque créneau occupé)", () => {
-    // Remplir tout avec un gros booking 09:00-17:00
-    const booking = makeRange(TEST_DATE, "09:00", "17:00");
+  it("tout plein → aucun créneau", () => {
+    // Booking couvrant toute la journée 08:00-16:00 UTC (09:00-17:00 Paris)
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T16:00:00.000Z");
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [booking],
@@ -261,9 +372,9 @@ describe("computeAvailableSlots", () => {
     expect(slots).toHaveLength(0);
   });
 
-  it("cas limite : rien de réservé, tous les créneaux disponibles", () => {
+  it("rien de réservé → tous les créneaux disponibles, hors pause", () => {
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 60,
       settings: BASE_SETTINGS,
       existingBookings: [],
@@ -272,19 +383,18 @@ describe("computeAvailableSlots", () => {
     });
 
     expect(slots.length).toBeGreaterThan(0);
-    // Vérifie qu'aucun créneau ne tombe pendant la pause
+    // Aucun créneau pendant la pause 12:00-13:00 Paris (11:00-12:00 UTC)
     for (const slot of slots) {
-      const pauseStart = makeTime(TEST_DATE, "12:00").getTime();
-      const pauseEnd = makeTime(TEST_DATE, "13:00").getTime();
       const overlaps =
-        slot.start.getTime() < pauseEnd && pauseStart < slot.end.getTime();
+        slot.start.getTime() < utc("2025-01-15T12:00:00.000Z").getTime() &&
+        utc("2025-01-15T11:00:00.000Z").getTime() < slot.end.getTime();
       expect(overlaps).toBe(false);
     }
   });
 
   it("prestation courte (30min) génère plus de créneaux", () => {
     const slots = computeAvailableSlots({
-      date: TEST_DATE_OBJ,
+      date: WINTER_DATE,
       serviceDurationMinutes: 30,
       settings: BASE_SETTINGS,
       existingBookings: [],
@@ -292,16 +402,21 @@ describe("computeAvailableSlots", () => {
       now: FAR_PAST,
     });
 
-    // 30min de durée → le dernier créneau possible est 16:30 (fin 17:00)
-    expect(slots[slots.length - 1].start).toEqual(makeTime(TEST_DATE, "16:30"));
-    expect(slots.length).toBeGreaterThan(22); // plus que les 60min
+    // Dernier créneau : 16:30 Paris (15:30 UTC), fin 17:00 Paris (16:00 UTC)
+    const last = slots[slots.length - 1];
+    expect(last.start).toEqual(utc("2025-01-15T15:30:00.000Z"));
+    expect(last.end).toEqual(utc("2025-01-15T16:00:00.000Z"));
   });
 });
+
+// ============================================================
+// Tests — findFreeSlotNumber
+// ============================================================
 
 describe("findFreeSlotNumber", () => {
   it("retourne 1 quand aucun booking existant", () => {
     const slot = findFreeSlotNumber(
-      makeRange(TEST_DATE, "09:00", "10:00"),
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
       [],
       2,
       15
@@ -311,10 +426,10 @@ describe("findFreeSlotNumber", () => {
 
   it("retourne le plus petit slot libre", () => {
     const existing = [
-      { ...makeRange(TEST_DATE, "09:00", "10:00"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
     ];
     const slot = findFreeSlotNumber(
-      makeRange(TEST_DATE, "09:00", "10:00"),
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
       existing,
       2,
       15
@@ -324,11 +439,11 @@ describe("findFreeSlotNumber", () => {
 
   it("retourne null quand tous les slots sont pris", () => {
     const existing = [
-      { ...makeRange(TEST_DATE, "09:00", "10:00"), slot_number: 1 },
-      { ...makeRange(TEST_DATE, "09:00", "10:00"), slot_number: 2 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 2 },
     ];
     const slot = findFreeSlotNumber(
-      makeRange(TEST_DATE, "09:00", "10:00"),
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
       existing,
       2,
       15
@@ -337,33 +452,60 @@ describe("findFreeSlotNumber", () => {
   });
 
   it("tient compte du battement dans l'attribution", () => {
-    // Booking slot 1 : 09:00-10:00, battement 15min → effectif [08:45, 10:15)
-    // Candidat 10:00-11:00 chevauche l'effectif (10:00 < 10:15)
     const existing = [
-      { ...makeRange(TEST_DATE, "09:00", "10:00"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
     ];
+    // Candidat 09:00-10:00 UTC chevauche l'effectif [07:45, 09:15) → slot 1 occupé
     const slot = findFreeSlotNumber(
-      makeRange(TEST_DATE, "10:00", "11:00"),
+      makeRange("2025-01-15T09:00:00.000Z", "2025-01-15T10:00:00.000Z"),
       existing,
       2,
       15
     );
-    // Slot 1 est occupé (battement), donc on prend slot 2
     expect(slot).toBe(2);
   });
 
-  it("ne bloque pas un booking non-chevauchant", () => {
-    // Booking slot 1 : 09:00-10:00, battement 15min → effectif [08:45, 10:15)
-    // Candidat 10:15-11:15 → 10:15 >= 10:15 donc pas de chevauchement
+  it("ne bloque pas un booking non-chevauchant (après battement)", () => {
     const existing = [
-      { ...makeRange(TEST_DATE, "09:00", "10:00"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
     ];
+    // Candidat 09:15-10:15 UTC : 09:15 >= 09:15 effectiveEnd → pas de chevauchement
     const slot = findFreeSlotNumber(
-      makeRange(TEST_DATE, "10:15", "11:15"),
+      makeRange("2025-01-15T09:15:00.000Z", "2025-01-15T10:15:00.000Z"),
       existing,
       2,
       15
     );
-    expect(slot).toBe(1); // slot 1 est libre pour ce créneau
+    expect(slot).toBe(1);
+  });
+});
+
+// ============================================================
+// Tests — getDayBoundsUTC
+// ============================================================
+
+describe("getDayBoundsUTC", () => {
+  it("hiver : début de journée Paris = 23:00 UTC veille", () => {
+    const bounds = getDayBoundsUTC(WINTER_DATE, "Europe/Paris", 0);
+    // 00:00 Paris 15 jan = 23:00 UTC 14 jan
+    expect(bounds.start).toEqual(utc("2025-01-14T23:00:00.000Z"));
+    // 00:00 Paris 16 jan = 23:00 UTC 15 jan
+    expect(bounds.end).toEqual(utc("2025-01-15T23:00:00.000Z"));
+  });
+
+  it("été : début de journée Paris = 22:00 UTC veille", () => {
+    const bounds = getDayBoundsUTC(SUMMER_DATE, "Europe/Paris", 0);
+    // 00:00 Paris 16 jul = 22:00 UTC 15 jul
+    expect(bounds.start).toEqual(utc("2025-07-15T22:00:00.000Z"));
+    // 00:00 Paris 17 jul = 22:00 UTC 16 jul
+    expect(bounds.end).toEqual(utc("2025-07-16T22:00:00.000Z"));
+  });
+
+  it("marge élargie pour le battement", () => {
+    const bounds = getDayBoundsUTC(WINTER_DATE, "Europe/Paris", 15);
+    // 23:00 UTC - 15min = 22:45 UTC
+    expect(bounds.start).toEqual(utc("2025-01-14T22:45:00.000Z"));
+    // 23:00 UTC + 15min = 23:15 UTC
+    expect(bounds.end).toEqual(utc("2025-01-15T23:15:00.000Z"));
   });
 });

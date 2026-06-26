@@ -1,3 +1,4 @@
+import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import type { AdminSettings, HoraireOuverture, Pause } from "./types";
 
 // ============================================================
@@ -11,6 +12,12 @@ import type { AdminSettings, HoraireOuverture, Pause } from "./types";
 // Le slot_number est une attribution greedy (first-fit) + filet de sécurité DB.
 // Il n'est JAMAIS la source de vérité pour la disponibilité.
 //
+// FUSEAU HORAIRE :
+// Les horaires d'ouverture et pauses sont exprimés en heure locale de l'institut
+// (settings.timezone, ex: "Europe/Paris"). Le moteur les convertit en instants UTC
+// pour comparaison avec les bookings stockés en timestamptz.
+// La détermination du jour de la semaine se fait en heure locale de l'institut.
+//
 // LIMITE DOCUMENTÉE : l'attribution de slot (greedy first-fit) est une heuristique.
 // Avec des durées de prestation variables, elle peut fragmenter l'espace et refuser
 // un créneau qu'un bin-packing optimal aurait accepté. Pour 2-4 praticiennes,
@@ -23,13 +30,13 @@ export interface TimeRange {
 }
 
 export interface AvailabilityInput {
-  date: Date;
+  date: Date; // un jour dans le fuseau de l'institut (seule la date compte, pas l'heure)
   serviceDurationMinutes: number;
   settings: AdminSettings;
   existingBookings: TimeRange[];
   externalBookings: TimeRange[];
   now: Date;
-  granularityMinutes?: number; // pas de génération des créneaux candidats (défaut: 15)
+  granularityMinutes?: number;
 }
 
 export interface AvailableSlot {
@@ -52,7 +59,11 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
     granularityMinutes = 15,
   } = input;
 
-  const dayOfWeek = getISODayOfWeek(date);
+  const tz = settings.timezone;
+
+  // Déterminer le jour de la semaine EN HEURE LOCALE de l'institut
+  const localDate = toZonedTime(date, tz);
+  const dayOfWeek = getISODayOfWeek(localDate);
 
   if (!settings.jours_travailles.includes(dayOfWeek)) {
     return [];
@@ -63,7 +74,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
     return [];
   }
 
-  const candidates = generateCandidates(date, horaire, serviceDurationMinutes, granularityMinutes);
+  const candidates = generateCandidates(date, horaire, serviceDurationMinutes, granularityMinutes, tz);
   const available: AvailableSlot[] = [];
 
   for (const candidate of candidates) {
@@ -71,14 +82,12 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
       continue;
     }
 
-    if (overlapsPause(candidate, settings.pauses, date)) {
+    if (overlapsPause(candidate, settings.pauses, date, tz)) {
       continue;
     }
 
     // Chevauchement avec battement : on étend chaque booking/external existant
     // de battement_minutes de chaque côté pour le calcul de conflit.
-    // Un créneau candidat est en conflit s'il empiète, même partiellement,
-    // sur une plage [booking.start - battement, booking.end + battement].
     const occupationCount = countOverlaps(
       candidate,
       existingBookings,
@@ -128,23 +137,57 @@ export function findFreeSlotNumber(
   return null;
 }
 
+/**
+ * Calcule les bornes UTC d'une journée dans le fuseau de l'institut.
+ * Utilisé pour les requêtes DB (fetch bookings/externals du jour).
+ * Élargit de `marginMinutes` de chaque côté pour ne pas rater un booking à cheval
+ * sur la frontière (battement inclus).
+ */
+export function getDayBoundsUTC(
+  date: Date,
+  timezone: string,
+  marginMinutes: number = 0
+): { start: Date; end: Date } {
+  // Construire 00:00:00 et 23:59:59.999 en heure locale de l'institut
+  const localDate = toZonedTime(date, timezone);
+  const year = localDate.getFullYear();
+  const month = localDate.getMonth();
+  const day = localDate.getDate();
+
+  // 00:00:00 heure locale → UTC
+  const dayStartLocal = new Date(year, month, day, 0, 0, 0, 0);
+  const dayStartUTC = fromZonedTime(dayStartLocal, timezone);
+
+  // 00:00:00 du jour suivant heure locale → UTC (fin exclusive)
+  const dayEndLocal = new Date(year, month, day + 1, 0, 0, 0, 0);
+  const dayEndUTC = fromZonedTime(dayEndLocal, timezone);
+
+  const marginMs = marginMinutes * 60_000;
+  return {
+    start: new Date(dayStartUTC.getTime() - marginMs),
+    end: new Date(dayEndUTC.getTime() + marginMs),
+  };
+}
+
 // ============================================================
 // Fonctions internes
 // ============================================================
 
 /**
  * Génère les créneaux candidats selon les horaires d'ouverture.
- * Chaque créneau = [start, start + durée).
+ * Les heures "HH:mm" sont interprétées dans le fuseau de l'institut
+ * puis converties en instants UTC.
  */
 function generateCandidates(
   date: Date,
   horaire: HoraireOuverture,
   durationMinutes: number,
-  granularityMinutes: number
+  granularityMinutes: number,
+  timezone: string
 ): TimeRange[] {
   const candidates: TimeRange[] = [];
-  const openTime = parseTimeOnDate(date, horaire.ouverture);
-  const closeTime = parseTimeOnDate(date, horaire.fermeture);
+  const openTime = parseTimeOnDate(date, horaire.ouverture, timezone);
+  const closeTime = parseTimeOnDate(date, horaire.fermeture, timezone);
 
   let current = openTime.getTime();
   const durationMs = durationMinutes * 60_000;
@@ -161,21 +204,15 @@ function generateCandidates(
   return candidates;
 }
 
-/**
- * Vérifie si un créneau tombe avant le délai minimum avant RDV.
- */
 function isBeforeMinDelay(slotStart: Date, now: Date, delayMinutes: number): boolean {
   const minTime = now.getTime() + delayMinutes * 60_000;
   return slotStart.getTime() < minTime;
 }
 
-/**
- * Vérifie si un créneau candidat chevauche une pause.
- */
-function overlapsPause(candidate: TimeRange, pauses: Pause[], date: Date): boolean {
+function overlapsPause(candidate: TimeRange, pauses: Pause[], date: Date, timezone: string): boolean {
   for (const pause of pauses) {
-    const pauseStart = parseTimeOnDate(date, pause.debut);
-    const pauseEnd = parseTimeOnDate(date, pause.fin);
+    const pauseStart = parseTimeOnDate(date, pause.debut, timezone);
+    const pauseEnd = parseTimeOnDate(date, pause.fin, timezone);
     if (rangesOverlap(candidate, { start: pauseStart, end: pauseEnd })) {
       return true;
     }
@@ -234,28 +271,32 @@ function overlapsWithBattement(
   return candidate.start.getTime() < effectiveEnd && effectiveStart < candidate.end.getTime();
 }
 
-/**
- * Chevauchement semi-ouvert entre deux ranges.
- * [A.start, A.end) ∩ [B.start, B.end) ≠ ∅ ⟺ A.start < B.end AND B.start < A.end
- */
 function rangesOverlap(a: TimeRange, b: TimeRange): boolean {
   return a.start.getTime() < b.end.getTime() && b.start.getTime() < a.end.getTime();
 }
 
 /**
- * Parse "HH:mm" en une Date UTC sur un jour donné.
+ * Interprète "HH:mm" comme une heure locale dans le fuseau de l'institut,
+ * sur le jour spécifié, puis retourne l'instant UTC correspondant.
  */
-function parseTimeOnDate(date: Date, time: string): Date {
+function parseTimeOnDate(date: Date, time: string, timezone: string): Date {
   const [hours, minutes] = time.split(":").map(Number);
-  const d = new Date(date);
-  d.setUTCHours(hours, minutes, 0, 0);
-  return d;
+  // Déterminer l'année/mois/jour dans le fuseau de l'institut
+  const localDate = toZonedTime(date, timezone);
+  const year = localDate.getFullYear();
+  const month = localDate.getMonth();
+  const day = localDate.getDate();
+
+  // Construire la date locale (HH:mm dans le fuseau) puis convertir en UTC
+  const localTime = new Date(year, month, day, hours, minutes, 0, 0);
+  return fromZonedTime(localTime, timezone);
 }
 
 /**
- * Retourne le jour ISO (1=lundi, 7=dimanche) pour une date UTC.
+ * Retourne le jour ISO (1=lundi, 7=dimanche).
+ * Attend une date déjà exprimée en heure locale (via toZonedTime).
  */
-function getISODayOfWeek(date: Date): number {
-  const day = date.getUTCDay();
+function getISODayOfWeek(localDate: Date): number {
+  const day = localDate.getDay();
   return day === 0 ? 7 : day;
 }
