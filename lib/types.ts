@@ -6,6 +6,7 @@ export interface Service {
   duree_minutes: number;
   prix: number; // centimes d'euros
   description: string | null;
+  categorie: string;
   actif: boolean;
   reservable_en_ligne: boolean;
   created_at: string;
