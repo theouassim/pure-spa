@@ -74,7 +74,7 @@ export async function assignSlotNumber(
       end: new Date(b.end_at),
       slot_number: b.slot_number,
     })),
-    settings.nb_praticiens,
+    settings.nb_salles,
     settings.battement_minutes
   );
 }

@@ -7,7 +7,7 @@ import type { AdminSettings, HoraireOuverture, Pause } from "./types";
 //
 // PRINCIPE : la disponibilité se détermine en COMPTANT les chevauchements.
 // Un créneau est dispo si :
-//   (bookings actifs qui chevauchent) + (external_bookings qui chevauchent) < nb_praticiens
+//   (bookings actifs qui chevauchent) + (external_bookings qui chevauchent) < nb_salles
 //
 // Le slot_number est une attribution greedy (first-fit) + filet de sécurité DB.
 // Il n'est JAMAIS la source de vérité pour la disponibilité.
@@ -95,7 +95,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
       settings.battement_minutes
     );
 
-    if (occupationCount >= settings.nb_praticiens) {
+    if (occupationCount >= settings.nb_salles) {
       continue;
     }
 
@@ -117,7 +117,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
 export function findFreeSlotNumber(
   candidateRange: TimeRange,
   existingBookings: Array<TimeRange & { slot_number: number }>,
-  nbPraticiens: number,
+  nbSalles: number,
   battementMinutes: number
 ): number | null {
   const occupiedSlots = new Set<number>();
@@ -128,7 +128,7 @@ export function findFreeSlotNumber(
     }
   }
 
-  for (let slot = 1; slot <= nbPraticiens; slot++) {
+  for (let slot = 1; slot <= nbSalles; slot++) {
     if (!occupiedSlots.has(slot)) {
       return slot;
     }

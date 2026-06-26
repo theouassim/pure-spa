@@ -7,6 +7,7 @@ export interface Service {
   prix: number; // centimes d'euros
   description: string | null;
   actif: boolean;
+  reservable_en_ligne: boolean;
   created_at: string;
 }
 
@@ -55,10 +56,11 @@ export interface AdminSettings {
   horaires_ouverture: HoraireOuverture[];
   jours_travailles: number[];
   pauses: Pause[];
-  nb_praticiens: number;
+  nb_salles: number;
   delai_min_avant_rdv: number;
   battement_minutes: number;
   conditions_annulation: string;
+  telephone_contact: string;
   timezone: string;
   updated_at: string;
 }

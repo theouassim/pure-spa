@@ -34,10 +34,11 @@ const BASE_SETTINGS: AdminSettings = {
   ],
   jours_travailles: [1, 2, 3, 4, 5, 6],
   pauses: [{ debut: "12:00", fin: "13:00" }],
-  nb_praticiens: 1,
+  nb_salles: 1,
   delai_min_avant_rdv: 60,
   battement_minutes: 15,
   conditions_annulation: "",
+  telephone_contact: "",
   timezone: "Europe/Paris",
   updated_at: "",
 };
@@ -280,7 +281,7 @@ describe("computeAvailableSlots — logique métier", () => {
   });
 
   it("plusieurs praticiens : 1 occupation < capacité → dispo", () => {
-    const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
+    const settings = { ...BASE_SETTINGS, nb_salles: 2 };
     const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
     const slots = computeAvailableSlots({
       date: WINTER_DATE,
@@ -299,7 +300,7 @@ describe("computeAvailableSlots — logique métier", () => {
   });
 
   it("plusieurs praticiens : capacité atteinte → bloqué", () => {
-    const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
+    const settings = { ...BASE_SETTINGS, nb_salles: 2 };
     const bookings = [
       makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
       makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
@@ -338,7 +339,7 @@ describe("computeAvailableSlots — logique métier", () => {
   });
 
   it("booking + external se cumulent vers la capacité", () => {
-    const settings = { ...BASE_SETTINGS, nb_praticiens: 2 };
+    const settings = { ...BASE_SETTINGS, nb_salles: 2 };
     const booking = makeRange("2025-01-15T13:00:00.000Z", "2025-01-15T14:00:00.000Z");
     const external = makeRange("2025-01-15T13:00:00.000Z", "2025-01-15T14:00:00.000Z");
 
