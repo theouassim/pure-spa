@@ -38,6 +38,7 @@ export interface Booking {
 export interface ExternalBooking {
   id: string;
   source: string;
+  calendar_source: string;
   start_at: string;
   end_at: string;
   raw_uid: string;

@@ -10,6 +10,7 @@ export interface CreateBookingInput {
   endAt: string;
   stripePaymentId: string | null;
   statutPaiement: StatutPaiement;
+  allowOverride?: boolean;
 }
 
 export type CreateBookingResult =
@@ -17,12 +18,11 @@ export type CreateBookingResult =
   | { success: false; reason: "slot_expired" | "no_slot" | "db_error" | "service_not_found" };
 
 export async function createBooking(input: CreateBookingInput): Promise<CreateBookingResult> {
-  const { serviceId, clientId, startAt, endAt, stripePaymentId, statutPaiement } = input;
+  const { serviceId, clientId, startAt, endAt, stripePaymentId, statutPaiement, allowOverride } = input;
 
   const slotStart = new Date(startAt);
   const slotEnd = new Date(endAt);
 
-  // Fetch le prix du service à ce moment précis (figé dans le booking)
   const { data: service } = await supabaseAdmin
     .from("services")
     .select("prix")
@@ -33,24 +33,27 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     return { success: false, reason: "service_not_found" };
   }
 
-  // Refetch Planity + revérification live du créneau
-  await syncAllSalles();
-  const availableSlots = await getAvailableSlots(serviceId, slotStart);
-  const stillAvailable = availableSlots.some(
-    (s) => s.start.getTime() === slotStart.getTime()
-  );
+  if (!allowOverride) {
+    await syncAllSalles();
+    const availableSlots = await getAvailableSlots(serviceId, slotStart);
+    const stillAvailable = availableSlots.some(
+      (s) => s.start.getTime() === slotStart.getTime()
+    );
 
-  if (!stillAvailable) {
-    return { success: false, reason: "slot_expired" };
+    if (!stillAvailable) {
+      return { success: false, reason: "slot_expired" };
+    }
   }
 
-  // Attribution du slot
-  const slotNumber = await assignSlotNumber(slotStart, slotEnd);
+  let slotNumber = await assignSlotNumber(slotStart, slotEnd);
   if (slotNumber === null) {
-    return { success: false, reason: "no_slot" };
+    if (allowOverride) {
+      slotNumber = await firstFreeSlotNumber(slotStart, slotEnd);
+    } else {
+      return { success: false, reason: "no_slot" };
+    }
   }
 
-  // Création du booking avec montant figé
   const { data, error } = await supabaseAdmin
     .from("bookings")
     .insert({
@@ -72,4 +75,19 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
   }
 
   return { success: true, bookingId: data.id };
+}
+
+async function firstFreeSlotNumber(slotStart: Date, slotEnd: Date): Promise<number> {
+  const { data: overlapping } = await supabaseAdmin
+    .from("bookings")
+    .select("slot_number")
+    .neq("statut", "cancelled")
+    .lt("start_at", slotEnd.toISOString())
+    .gt("end_at", slotStart.toISOString());
+
+  const usedSlots = new Set((overlapping ?? []).map((b) => b.slot_number));
+
+  let slot = 1;
+  while (usedSlots.has(slot)) slot++;
+  return slot;
 }
