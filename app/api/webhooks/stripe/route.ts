@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createBooking } from "@/lib/create-booking";
+import { sendBookingConfirmation } from "@/lib/emails";
 import type Stripe from "stripe";
 
 export async function POST(request: NextRequest) {
@@ -79,6 +80,26 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     },
     service_id: meta.service_id,
   });
+
+  // Email confirmation client + admin
+  const { data: service } = await supabaseAdmin
+    .from("services")
+    .select("nom, duree_minutes")
+    .eq("id", meta.service_id)
+    .single();
+  const { data: client } = await supabaseAdmin
+    .from("clients")
+    .select("nom, email")
+    .eq("id", meta.client_id)
+    .single();
+
+  if (service && client) {
+    await sendBookingConfirmation(
+      { start_at: meta.start_at, montant: session.amount_total, statut_paiement: "paye_en_ligne" },
+      client,
+      service
+    );
+  }
 }
 
 async function handleCheckoutExpired(session: Stripe.Checkout.Session) {

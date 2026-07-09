@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createBooking } from "@/lib/create-booking";
+import { sendBookingConfirmation } from "@/lib/emails";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -58,6 +59,21 @@ export async function POST(request: NextRequest) {
       );
     }
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+  }
+
+  // Email confirmation client + admin
+  const { data: service } = await supabaseAdmin
+    .from("services")
+    .select("nom, duree_minutes, prix")
+    .eq("id", serviceId)
+    .single();
+
+  if (service) {
+    await sendBookingConfirmation(
+      { start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
+      { nom: contact.nom, email: contact.email },
+      service
+    );
   }
 
   return NextResponse.json({ success: true, bookingId: result.bookingId });
