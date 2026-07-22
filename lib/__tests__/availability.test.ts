@@ -484,6 +484,85 @@ describe("findFreeSlotNumber", () => {
 });
 
 // ============================================================
+// Tests — serviceBattementMinutes (battement par service)
+// ============================================================
+
+describe("computeAvailableSlots — serviceBattementMinutes", () => {
+  it("utilise le battement du service quand fourni (30min > global 15min)", () => {
+    // Booking 09:00-10:00 Paris (08:00-09:00 UTC hiver)
+    // Battement service = 30min → effectif [07:30, 09:30) UTC
+    // Créneau 10:15 Paris (09:15 UTC, fin 10:15 UTC) : 09:15 < 09:30 → bloqué
+    // Créneau 10:30 Paris (09:30 UTC, fin 10:30 UTC) : 09:30 < 09:30 → faux → libre
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: BASE_SETTINGS,
+      existingBookings: [booking],
+      externalBookings: [],
+      now: FAR_PAST,
+      serviceBattementMinutes: 30,
+    });
+
+    // 09:15 UTC doit être bloqué (avec battement 30min)
+    const at0915utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:15:00.000Z").getTime()
+    );
+    expect(at0915utc).toBeUndefined();
+
+    // 09:30 UTC doit être libre
+    const at0930utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:30:00.000Z").getTime()
+    );
+    expect(at0930utc).toBeDefined();
+  });
+
+  it("fallback sur le battement global quand serviceBattementMinutes est null", () => {
+    // Même scénario qu'au-dessus mais avec serviceBattementMinutes = null
+    // → utilise battement global (15min) → effectif [07:45, 09:15) UTC
+    // Créneau 09:15 UTC : 09:15 < 09:15 → faux → libre
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: BASE_SETTINGS,
+      existingBookings: [booking],
+      externalBookings: [],
+      now: FAR_PAST,
+      serviceBattementMinutes: null,
+    });
+
+    // 09:15 UTC doit être libre (battement global 15min)
+    const at0915utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:15:00.000Z").getTime()
+    );
+    expect(at0915utc).toBeDefined();
+  });
+
+  it("battement service = 0 permet des créneaux collés", () => {
+    // Booking 09:00-10:00 Paris (08:00-09:00 UTC)
+    // Battement service = 0 → effectif [08:00, 09:00) UTC exactement
+    // Créneau 09:00 UTC : 09:00 < 09:00 → faux → libre immédiatement après
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: BASE_SETTINGS,
+      existingBookings: [booking],
+      externalBookings: [],
+      now: FAR_PAST,
+      serviceBattementMinutes: 0,
+    });
+
+    // 09:00 UTC doit être libre (battement = 0, pas de marge)
+    const at0900utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    expect(at0900utc).toBeDefined();
+  });
+});
+
+// ============================================================
 // Tests — getDayBoundsUTC
 // ============================================================
 

@@ -21,6 +21,7 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
   const [prixEuros, setPrixEuros] = useState(service ? (service.prix / 100).toFixed(2) : "");
   const [description, setDescription] = useState(service?.description ?? "");
   const [reservableEnLigne, setReservableEnLigne] = useState(service?.reservable_en_ligne ?? true);
+  const [battementMin, setBattementMin] = useState(service?.battement_min != null ? String(service.battement_min) : "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,13 +39,14 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
 
     setSubmitting(true);
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       nom: nom.trim(),
       categorie: finalCategorie,
       duree_minutes: duree,
       prix: prixCentimes,
       description: description.trim() || null,
       reservable_en_ligne: reservableEnLigne,
+      battement_min: battementMin.trim() === "" ? null : parseInt(battementMin, 10),
     };
 
     const url = isEdit ? `/api/admin/services/${service.id}` : "/api/admin/services";
@@ -161,6 +163,22 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
               className="w-full rounded-md border border-border px-3 py-2 text-sm"
+            />
+          </div>
+
+          {/* Marge après prestation */}
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-text-muted">
+              Marge après prestation (min)
+              <InfoTooltip text="Temps de battement spécifique à ce service (nettoyage, préparation). Vide = utilise le battement global défini dans Configuration." />
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={battementMin}
+              onChange={(e) => setBattementMin(e.target.value)}
+              placeholder="Battement global par défaut"
+              className="w-full rounded-md border border-border px-3 py-2 text-sm placeholder:text-text-muted/50"
             />
           </div>
 

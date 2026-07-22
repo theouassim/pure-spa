@@ -22,8 +22,8 @@ export async function getAvailableSlots(
   const service = await fetchService(serviceId);
   if (!service) return [];
 
-  // Bornes de la journée en UTC (heure locale institut → UTC) + marge battement
-  const bounds = getDayBoundsUTC(date, settings.timezone, settings.battement_minutes);
+  const resolvedBattement = service.battement_min ?? settings.battement_minutes;
+  const bounds = getDayBoundsUTC(date, settings.timezone, resolvedBattement);
 
   const [bookings, externals] = await Promise.all([
     fetchActiveBookingsInRange(bounds.start, bounds.end),
@@ -44,6 +44,7 @@ export async function getAvailableSlots(
     })),
     now: new Date(),
     skipDelayCheck: options?.skipDelayCheck,
+    serviceBattementMinutes: service.battement_min,
   });
 }
 

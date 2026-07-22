@@ -41,6 +41,13 @@ export async function PATCH(
   if (body.actif !== undefined) {
     updates.actif = Boolean(body.actif);
   }
+  if (body.battement_min !== undefined) {
+    const val = body.battement_min === null || body.battement_min === "" ? null : Number(body.battement_min);
+    if (val !== null && (!Number.isInteger(val) || val < 0)) {
+      return NextResponse.json({ error: "Battement invalide." }, { status: 400 });
+    }
+    updates.battement_min = val;
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Aucune modification." }, { status: 400 });

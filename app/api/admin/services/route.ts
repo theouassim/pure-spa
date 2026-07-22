@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabaseAdmin
     .from("services")
-    .select("id, nom, categorie, duree_minutes, prix, description, actif, reservable_en_ligne, created_at")
+    .select("id, nom, categorie, duree_minutes, prix, description, actif, reservable_en_ligne, battement_min, created_at")
     .order("categorie")
     .order("nom");
 
@@ -32,17 +32,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
+  const insertData: Record<string, unknown> = {
+    nom: body.nom.trim(),
+    categorie: body.categorie?.trim() || "Soins",
+    duree_minutes: body.duree_minutes,
+    prix: body.prix,
+    description: body.description?.trim() || null,
+    reservable_en_ligne: body.reservable_en_ligne ?? true,
+    actif: true,
+  };
+
+  if (body.battement_min !== undefined) {
+    const val = body.battement_min === null || body.battement_min === "" ? null : Number(body.battement_min);
+    if (val !== null && (!Number.isInteger(val) || val < 0)) {
+      return NextResponse.json({ error: "Battement invalide." }, { status: 400 });
+    }
+    insertData.battement_min = val;
+  }
+
   const { data, error } = await supabaseAdmin
     .from("services")
-    .insert({
-      nom: body.nom.trim(),
-      categorie: body.categorie?.trim() || "Soins",
-      duree_minutes: body.duree_minutes,
-      prix: body.prix,
-      description: body.description?.trim() || null,
-      reservable_en_ligne: body.reservable_en_ligne ?? true,
-      actif: true,
-    })
+    .insert(insertData)
     .select("id")
     .single();
 

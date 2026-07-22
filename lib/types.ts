@@ -10,6 +10,7 @@ export interface Service {
   categorie: string;
   actif: boolean;
   reservable_en_ligne: boolean;
+  battement_min: number | null;
   created_at: string;
 }
 

@@ -38,6 +38,7 @@ export interface AvailabilityInput {
   now: Date;
   granularityMinutes?: number;
   skipDelayCheck?: boolean;
+  serviceBattementMinutes?: number | null;
 }
 
 export interface AvailableSlot {
@@ -59,7 +60,10 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
     now,
     granularityMinutes = 15,
     skipDelayCheck = false,
+    serviceBattementMinutes,
   } = input;
+
+  const resolvedBattement = serviceBattementMinutes ?? settings.battement_minutes;
 
   const tz = settings.timezone;
 
@@ -88,13 +92,11 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
       continue;
     }
 
-    // Chevauchement avec battement : on étend chaque booking/external existant
-    // de battement_minutes de chaque côté pour le calcul de conflit.
     const occupationCount = countOverlaps(
       candidate,
       existingBookings,
       externalBookings,
-      settings.battement_minutes
+      resolvedBattement
     );
 
     if (occupationCount >= settings.nb_salles) {

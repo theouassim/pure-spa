@@ -14,6 +14,7 @@ export interface ServiceRow {
   description: string | null;
   actif: boolean;
   reservable_en_ligne: boolean;
+  battement_min: number | null;
   created_at: string;
 }
 
