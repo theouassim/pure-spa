@@ -1,33 +1,59 @@
 import { Resend } from "resend";
+import { supabaseAdmin } from "./supabase-admin";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const FROM_EMAIL = "Pure Spa Institut <noreply@purespa-institut.fr>";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "contact@purespa-institut.fr";
+const FROM_EMAIL = process.env.FROM_EMAIL || "Pure Spa Institut <noreply@purespainstitut.com>";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "contact@purespainstitut.com";
+const LOGO_URL = "https://booking.purespainstitut.com/logo.png";
 
-interface BookingEmailData {
+const INSTITUT_NOM = "Pure SPA — Hair Spa Institut";
+const INSTITUT_ADRESSE = "123 rue du Spa, 75001 Paris";
+const INSTITUT_TELEPHONE = "01 23 45 67 89";
+
+// --- Types ---
+
+export interface BookingEmailData {
+  bookingId: string;
   clientNom: string;
-  clientEmail: string;
+  clientEmail: string | null;
   serviceNom: string;
-  date: string; // "Mercredi 12 mars 2025"
-  heure: string; // "14:30"
-  duree: number; // minutes
-  montant: number | null; // centimes
+  date: string;
+  heure: string;
+  duree: number;
+  montant: number | null;
   statutPaiement: string;
 }
 
+// --- Formatage ---
+
 function formatMontant(centimes: number | null): string {
-  if (!centimes) return "—";
+  if (!centimes) return "Gratuit";
   return `${(centimes / 100).toFixed(2).replace(".", ",")} €`;
 }
 
-function formatDate(isoDate: string): { date: string; heure: string } {
+function formatStatutPaiement(statut: string): string {
+  switch (statut) {
+    case "paye_en_ligne": return "Payé en ligne";
+    case "paye_sur_place": return "Réglé sur place";
+    case "en_attente": return "À régler sur place";
+    default: return statut;
+  }
+}
+
+function formatDate(isoDate: string): { date: string; heure: string; dateShort: string } {
   const d = new Date(isoDate);
   const formatter = new Intl.DateTimeFormat("fr-FR", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "Europe/Paris",
+  });
+  const shortFormatter = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
     timeZone: "Europe/Paris",
   });
   const timeFormatter = new Intl.DateTimeFormat("fr-FR", {
@@ -38,16 +64,18 @@ function formatDate(isoDate: string): { date: string; heure: string } {
   return {
     date: formatter.format(d),
     heure: timeFormatter.format(d),
+    dateShort: shortFormatter.format(d),
   };
 }
 
-export function buildEmailData(booking: {
-  start_at: string;
-  montant: number | null;
-  statut_paiement: string;
-}, client: { nom: string; email: string }, service: { nom: string; duree_minutes: number }): BookingEmailData {
+export function buildEmailData(
+  booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
+  client: { nom: string; email: string | null },
+  service: { nom: string; duree_minutes: number }
+): BookingEmailData {
   const { date, heure } = formatDate(booking.start_at);
   return {
+    bookingId: booking.id,
     clientNom: client.nom,
     clientEmail: client.email,
     serviceNom: service.nom,
@@ -59,136 +87,335 @@ export function buildEmailData(booking: {
   };
 }
 
-// --- Templates HTML ---
+// --- Layout email ---
+
+const COLORS = {
+  primary: "#8b6f5c",
+  primaryDark: "#6d5648",
+  accent: "#d4a98a",
+  accentLight: "#f0e6de",
+  bg: "#faf8f6",
+  bgCard: "#ffffff",
+  text: "#2d2926",
+  textMuted: "#6b5e57",
+  border: "#e8e0da",
+  success: "#4a8c6f",
+  error: "#c75050",
+};
+
+function emailLayout(content: string): string {
+  return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body style="margin:0;padding:0;background:${COLORS.bg};font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:${COLORS.text};line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:${COLORS.bg};">
+    <tr>
+      <td align="center" style="padding:40px 16px;">
+        <table role="presentation" width="560" cellspacing="0" cellpadding="0" style="max-width:560px;width:100%;">
+          <!-- Logo -->
+          <tr>
+            <td align="center" style="padding-bottom:32px;">
+              <img src="${LOGO_URL}" alt="Pure SPA" width="180" style="display:block;height:auto;max-width:180px;" />
+            </td>
+          </tr>
+          <!-- Card -->
+          <tr>
+            <td style="background:${COLORS.bgCard};border-radius:12px;border:1px solid ${COLORS.border};padding:40px 36px;box-shadow:0 2px 12px rgba(0,0,0,0.04);">
+              ${content}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:28px 0 0;text-align:center;">
+              <p style="margin:0 0 4px;font-size:13px;color:${COLORS.textMuted};">${INSTITUT_NOM}</p>
+              <p style="margin:0 0 4px;font-size:13px;color:${COLORS.textMuted};">${INSTITUT_ADRESSE}</p>
+              <p style="margin:0 0 12px;font-size:13px;color:${COLORS.textMuted};">${INSTITUT_TELEPHONE}</p>
+              <p style="margin:0;font-size:11px;color:${COLORS.border};">Cet email a été envoyé automatiquement, merci de ne pas y répondre.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+function detailRow(label: string, value: string): string {
+  return `<tr>
+    <td style="padding:10px 0;font-size:14px;color:${COLORS.textMuted};border-bottom:1px solid ${COLORS.border};width:130px;vertical-align:top;">${label}</td>
+    <td style="padding:10px 0;font-size:14px;color:${COLORS.text};font-weight:500;border-bottom:1px solid ${COLORS.border};">${value}</td>
+  </tr>`;
+}
+
+function badge(text: string, color: string, bgColor: string): string {
+  return `<span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;color:${color};background:${bgColor};">${text}</span>`;
+}
+
+// --- Templates ---
 
 function confirmationClientHtml(data: BookingEmailData): string {
-  const paiementLine = data.statutPaiement === "paye_en_ligne"
-    ? `<p style="color:#059669;font-weight:600;">✓ Payé en ligne — ${formatMontant(data.montant)}</p>`
-    : `<p>Paiement sur place — ${formatMontant(data.montant)}</p>`;
+  const paiementBadge = data.statutPaiement === "paye_en_ligne"
+    ? badge("Payé en ligne", COLORS.success, "#e8f5ef")
+    : badge("À régler sur place", COLORS.primary, COLORS.accentLight);
 
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#fafafa;border-radius:12px;">
-      <h1 style="color:#1a1a1a;font-size:24px;margin-bottom:8px;">Réservation confirmée</h1>
-      <p style="color:#555;margin-bottom:24px;">Bonjour ${data.clientNom},</p>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;margin-bottom:24px;">
-        <p style="margin:0 0 8px;"><strong>Soin :</strong> ${data.serviceNom}</p>
-        <p style="margin:0 0 8px;"><strong>Date :</strong> ${data.date}</p>
-        <p style="margin:0 0 8px;"><strong>Heure :</strong> ${data.heure}</p>
-        <p style="margin:0 0 8px;"><strong>Durée :</strong> ${data.duree} min</p>
-        ${paiementLine}
-      </div>
-      <p style="color:#555;font-size:14px;">À bientôt chez Pure Spa Institut !</p>
-      <p style="color:#999;font-size:12px;margin-top:24px;">Si vous souhaitez annuler ou modifier votre rendez-vous, contactez-nous par téléphone.</p>
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:22px;font-weight:600;color:${COLORS.text};">Réservation confirmée</h1>
+    <p style="margin:0 0 28px;font-size:15px;color:${COLORS.textMuted};">Bonjour ${data.clientNom}, votre rendez-vous est bien enregistré.</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+      ${detailRow("Durée", `${data.duree} minutes`)}
+      ${detailRow("Montant", formatMontant(data.montant))}
+    </table>
+
+    <div style="margin-bottom:24px;">${paiementBadge}</div>
+
+    <div style="background:${COLORS.accentLight};border-radius:8px;padding:16px 20px;border-left:3px solid ${COLORS.accent};">
+      <p style="margin:0;font-size:13px;color:${COLORS.primaryDark};">Merci de vous présenter 5 minutes avant l'heure de votre rendez-vous. Pour toute modification ou annulation, contactez-nous par téléphone.</p>
     </div>
-  `;
+  `);
 }
 
 function confirmationAdminHtml(data: BookingEmailData): string {
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;">
-      <h1 style="font-size:20px;color:#1a1a1a;">Nouvelle réservation</h1>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px;">
-        <tr><td style="padding:8px 0;color:#666;">Cliente</td><td style="padding:8px 0;font-weight:600;">${data.clientNom} (${data.clientEmail})</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Soin</td><td style="padding:8px 0;">${data.serviceNom}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Date</td><td style="padding:8px 0;">${data.date} à ${data.heure}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Durée</td><td style="padding:8px 0;">${data.duree} min</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Montant</td><td style="padding:8px 0;">${formatMontant(data.montant)}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Paiement</td><td style="padding:8px 0;">${data.statutPaiement.replace(/_/g, " ")}</td></tr>
-      </table>
-    </div>
-  `;
+  const paiementBadge = data.statutPaiement === "paye_en_ligne"
+    ? badge("Payé en ligne", COLORS.success, "#e8f5ef")
+    : badge("À régler sur place", COLORS.primary, COLORS.accentLight);
+
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:${COLORS.text};">Nouvelle réservation</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:${COLORS.textMuted};">Un nouveau rendez-vous vient d'être pris sur le site.</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+      ${detailRow("Durée", `${data.duree} minutes`)}
+      ${detailRow("Montant", formatMontant(data.montant))}
+    </table>
+
+    <div>${paiementBadge}</div>
+  `);
 }
 
 function annulationClientHtml(data: BookingEmailData): string {
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;background:#fafafa;border-radius:12px;">
-      <h1 style="color:#dc2626;font-size:24px;margin-bottom:8px;">Rendez-vous annulé</h1>
-      <p style="color:#555;margin-bottom:24px;">Bonjour ${data.clientNom},</p>
-      <p style="color:#555;">Votre rendez-vous a été annulé :</p>
-      <div style="background:#fff;border:1px solid #e5e5e5;border-radius:8px;padding:24px;margin:16px 0 24px;">
-        <p style="margin:0 0 8px;"><strong>Soin :</strong> ${data.serviceNom}</p>
-        <p style="margin:0 0 8px;"><strong>Date :</strong> ${data.date} à ${data.heure}</p>
-      </div>
-      <p style="color:#555;font-size:14px;">N'hésitez pas à reprendre rendez-vous quand vous le souhaitez.</p>
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:22px;font-weight:600;color:${COLORS.error};">Rendez-vous annulé</h1>
+    <p style="margin:0 0 28px;font-size:15px;color:${COLORS.textMuted};">Bonjour ${data.clientNom}, votre rendez-vous a bien été annulé.</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+    </table>
+
+    <div style="background:${COLORS.accentLight};border-radius:8px;padding:16px 20px;border-left:3px solid ${COLORS.accent};">
+      <p style="margin:0;font-size:13px;color:${COLORS.primaryDark};">N'hésitez pas à reprendre rendez-vous quand vous le souhaitez. Nous serons ravis de vous accueillir à nouveau.</p>
     </div>
-  `;
+  `);
 }
 
 function annulationAdminHtml(data: BookingEmailData): string {
-  return `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:32px;">
-      <h1 style="font-size:20px;color:#dc2626;">Réservation annulée</h1>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px;">
-        <tr><td style="padding:8px 0;color:#666;">Cliente</td><td style="padding:8px 0;font-weight:600;">${data.clientNom} (${data.clientEmail})</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Soin</td><td style="padding:8px 0;">${data.serviceNom}</td></tr>
-        <tr><td style="padding:8px 0;color:#666;">Date</td><td style="padding:8px 0;">${data.date} à ${data.heure}</td></tr>
-      </table>
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:${COLORS.error};">Réservation annulée</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:${COLORS.textMuted};">Une réservation vient d'être annulée.</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+    </table>
+  `);
+}
+
+function modificationClientHtml(data: BookingEmailData): string {
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:22px;font-weight:600;color:${COLORS.text};">Rendez-vous modifié</h1>
+    <p style="margin:0 0 28px;font-size:15px;color:${COLORS.textMuted};">Bonjour ${data.clientNom}, votre rendez-vous a été mis à jour. Voici les nouvelles informations :</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+      ${detailRow("Durée", `${data.duree} minutes`)}
+      ${detailRow("Montant", formatMontant(data.montant))}
+    </table>
+
+    <div style="margin-bottom:24px;">${badge(formatStatutPaiement(data.statutPaiement), COLORS.primary, COLORS.accentLight)}</div>
+
+    <div style="background:${COLORS.accentLight};border-radius:8px;padding:16px 20px;border-left:3px solid ${COLORS.accent};">
+      <p style="margin:0;font-size:13px;color:${COLORS.primaryDark};">Merci de vous présenter 5 minutes avant l'heure de votre rendez-vous. Pour toute question, contactez-nous par téléphone.</p>
     </div>
-  `;
+  `);
 }
 
-// --- Envoi ---
+function modificationAdminHtml(data: BookingEmailData): string {
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:${COLORS.text};">Réservation modifiée</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:${COLORS.textMuted};">Une réservation a été modifiée.</p>
 
-export async function sendConfirmationClient(data: BookingEmailData) {
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Nouvelle date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+      ${detailRow("Durée", `${data.duree} minutes`)}
+      ${detailRow("Montant", formatMontant(data.montant))}
+    </table>
+  `);
+}
+
+// --- Envoi avec gardes ---
+
+async function markEmailSent(bookingId: string, field: "email_confirmation_sent" | "email_annulation_sent" | "email_modification_sent") {
+  await supabaseAdmin.from("bookings").update({ [field]: true }).eq("id", bookingId);
+}
+
+async function isEmailAlreadySent(bookingId: string, field: "email_confirmation_sent" | "email_annulation_sent" | "email_modification_sent"): Promise<boolean> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("bookings")
+      .select(field)
+      .eq("id", bookingId)
+      .single();
+    if (!data) return false;
+    return (data as Record<string, unknown>)[field] === true;
+  } catch {
+    return false;
+  }
+}
+
+export async function sendBookingConfirmation(
+  booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
+  client: { nom: string; email: string | null },
+  service: { nom: string; duree_minutes: number }
+): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  await resend.emails.send({
-    from: FROM_EMAIL,
-    to: data.clientEmail,
-    subject: `Réservation confirmée — ${data.serviceNom} le ${data.date}`,
-    html: confirmationClientHtml(data),
-  });
+
+  try {
+    const alreadySent = await isEmailAlreadySent(booking.id, "email_confirmation_sent");
+    if (alreadySent) return;
+
+    const data = buildEmailData(booking, client, service);
+    const { dateShort } = formatDate(booking.start_at);
+
+    const promises: Promise<unknown>[] = [];
+
+    if (data.clientEmail) {
+      promises.push(
+        resend.emails.send({
+          from: FROM_EMAIL,
+          to: data.clientEmail,
+          subject: `Confirmation de votre rendez-vous — ${data.serviceNom} le ${dateShort} à ${data.heure}`,
+          html: confirmationClientHtml(data),
+        })
+      );
+    }
+
+    promises.push(
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: ADMIN_EMAIL,
+        subject: `Nouvelle réservation — ${data.clientNom} — ${data.serviceNom}`,
+        html: confirmationAdminHtml(data),
+      })
+    );
+
+    await Promise.all(promises);
+    await markEmailSent(booking.id, "email_confirmation_sent");
+  } catch (err) {
+    console.error("[emails] Erreur envoi confirmation:", err);
+  }
 }
 
-export async function sendConfirmationAdmin(data: BookingEmailData) {
+export async function sendBookingCancellation(
+  booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
+  client: { nom: string; email: string | null },
+  service: { nom: string; duree_minutes: number }
+): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  await resend.emails.send({
-    from: FROM_EMAIL,
-    to: ADMIN_EMAIL,
-    subject: `Nouvelle réservation — ${data.clientNom} — ${data.serviceNom}`,
-    html: confirmationAdminHtml(data),
-  });
+
+  try {
+    const alreadySent = await isEmailAlreadySent(booking.id, "email_annulation_sent");
+    if (alreadySent) return;
+
+    const data = buildEmailData(booking, client, service);
+
+    const promises: Promise<unknown>[] = [];
+
+    if (data.clientEmail) {
+      promises.push(
+        resend.emails.send({
+          from: FROM_EMAIL,
+          to: data.clientEmail,
+          subject: `Rendez-vous annulé — ${data.serviceNom}`,
+          html: annulationClientHtml(data),
+        })
+      );
+    }
+
+    promises.push(
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: ADMIN_EMAIL,
+        subject: `Annulation — ${data.clientNom} — ${data.serviceNom}`,
+        html: annulationAdminHtml(data),
+      })
+    );
+
+    await Promise.all(promises);
+    await markEmailSent(booking.id, "email_annulation_sent");
+  } catch (err) {
+    console.error("[emails] Erreur envoi annulation:", err);
+  }
 }
 
-export async function sendAnnulationClient(data: BookingEmailData) {
+export async function sendBookingModification(
+  booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
+  client: { nom: string; email: string | null },
+  service: { nom: string; duree_minutes: number }
+): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
-  await resend.emails.send({
-    from: FROM_EMAIL,
-    to: data.clientEmail,
-    subject: `Rendez-vous annulé — ${data.serviceNom}`,
-    html: annulationClientHtml(data),
-  });
-}
 
-export async function sendAnnulationAdmin(data: BookingEmailData) {
-  if (!process.env.RESEND_API_KEY) return;
-  await resend.emails.send({
-    from: FROM_EMAIL,
-    to: ADMIN_EMAIL,
-    subject: `Annulation — ${data.clientNom} — ${data.serviceNom}`,
-    html: annulationAdminHtml(data),
-  });
-}
+  try {
+    const alreadySent = await isEmailAlreadySent(booking.id, "email_modification_sent");
+    if (alreadySent) return;
 
-export async function sendBookingConfirmation(booking: {
-  start_at: string;
-  montant: number | null;
-  statut_paiement: string;
-}, client: { nom: string; email: string }, service: { nom: string; duree_minutes: number }) {
-  const data = buildEmailData(booking, client, service);
-  await Promise.all([
-    sendConfirmationClient(data),
-    sendConfirmationAdmin(data),
-  ]);
-}
+    const data = buildEmailData(booking, client, service);
+    const { dateShort } = formatDate(booking.start_at);
 
-export async function sendBookingCancellation(booking: {
-  start_at: string;
-  montant: number | null;
-  statut_paiement: string;
-}, client: { nom: string; email: string }, service: { nom: string; duree_minutes: number }) {
-  const data = buildEmailData(booking, client, service);
-  await Promise.all([
-    sendAnnulationClient(data),
-    sendAnnulationAdmin(data),
-  ]);
+    const promises: Promise<unknown>[] = [];
+
+    if (data.clientEmail) {
+      promises.push(
+        resend.emails.send({
+          from: FROM_EMAIL,
+          to: data.clientEmail,
+          subject: `Rendez-vous modifié — ${data.serviceNom} le ${dateShort}`,
+          html: modificationClientHtml(data),
+        })
+      );
+    }
+
+    promises.push(
+      resend.emails.send({
+        from: FROM_EMAIL,
+        to: ADMIN_EMAIL,
+        subject: `Modification — ${data.clientNom} — ${data.serviceNom}`,
+        html: modificationAdminHtml(data),
+      })
+    );
+
+    await Promise.all(promises);
+    await markEmailSent(booking.id, "email_modification_sent");
+  } catch (err) {
+    console.error("[emails] Erreur envoi modification:", err);
+  }
 }

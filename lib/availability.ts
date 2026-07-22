@@ -37,6 +37,7 @@ export interface AvailabilityInput {
   externalBookings: TimeRange[];
   now: Date;
   granularityMinutes?: number;
+  skipDelayCheck?: boolean;
 }
 
 export interface AvailableSlot {
@@ -57,6 +58,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
     externalBookings,
     now,
     granularityMinutes = 15,
+    skipDelayCheck = false,
   } = input;
 
   const tz = settings.timezone;
@@ -78,7 +80,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
   const available: AvailableSlot[] = [];
 
   for (const candidate of candidates) {
-    if (isBeforeMinDelay(candidate.start, now, settings.delai_min_avant_rdv)) {
+    if (!skipDelayCheck && isBeforeMinDelay(candidate.start, now, settings.delai_min_avant_rdv)) {
       continue;
     }
 
