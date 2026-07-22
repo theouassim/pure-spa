@@ -39,7 +39,7 @@ function formatTime(isoString: string): string {
 
 export function BookingSummary({ service, slot, contact, onSlotExpired }: Props) {
   const [loading, setLoading] = useState<"online" | "onsite" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string; action?: "retry" | "slot" } | null>(null);
 
   async function handlePayOnline() {
     setLoading("online");
@@ -68,13 +68,14 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
       }
 
       if (!res.ok || !data.url) {
-        setError("Erreur lors de la création du paiement. Veuillez réessayer.");
+        const msg = data.message || data.error || "Le paiement n'a pas pu être initialisé.";
+        setError({ message: msg, action: "retry" });
         return;
       }
 
       window.location.href = data.url;
     } catch {
-      setError("Erreur de connexion. Veuillez réessayer.");
+      setError({ message: "Connexion perdue. Vérifiez votre connexion internet.", action: "retry" });
     } finally {
       setLoading(null);
     }
@@ -107,14 +108,15 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
       }
 
       if (!res.ok || !data.success) {
-        setError("Erreur lors de la réservation. Veuillez réessayer.");
+        const msg = data.message || data.error || "La réservation n'a pas pu être enregistrée.";
+        setError({ message: msg, action: "slot" });
         return;
       }
 
       track("booking_confirmed", { service_id: service.id, start: slot.start, mode: "on_site" });
       window.location.href = `/reserver/confirmation?mode=onsite&booking_id=${data.bookingId}`;
     } catch {
-      setError("Erreur de connexion. Veuillez réessayer.");
+      setError({ message: "Connexion perdue. Vérifiez votre connexion internet.", action: "retry" });
     } finally {
       setLoading(null);
     }
@@ -155,8 +157,26 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg bg-error/10 border border-error/20 px-4 py-3 text-sm text-error">
-          {error}
+        <div className="mt-4 rounded-lg bg-error/10 border border-error/20 px-4 py-3">
+          <p className="text-sm text-error">{error.message}</p>
+          <div className="mt-2 flex gap-2">
+            {error.action === "retry" && (
+              <button
+                onClick={() => setError(null)}
+                className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary-dark"
+              >
+                Réessayer
+              </button>
+            )}
+            {error.action === "slot" && (
+              <button
+                onClick={onSlotExpired}
+                className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary-dark"
+              >
+                Choisir un autre créneau
+              </button>
+            )}
+          </div>
         </div>
       )}
 

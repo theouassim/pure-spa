@@ -75,7 +75,7 @@ export function BookingFunnel() {
       setTelephoneContact(data.telephone_contact);
       setCategories(data.categories ?? []);
     } catch {
-      setError("Impossible de charger les prestations. Veuillez réessayer.");
+      setError("Impossible de charger les prestations. Vérifiez votre connexion internet.");
     } finally {
       setLoading(false);
     }
@@ -135,7 +135,7 @@ export function BookingFunnel() {
 
       setStep("summary");
     } catch {
-      setError("Erreur lors de la vérification. Veuillez réessayer.");
+      setError("La vérification du créneau a échoué. Vérifiez votre connexion et réessayez.");
     } finally {
       setVerifying(false);
     }
@@ -202,27 +202,44 @@ export function BookingFunnel() {
 
       {/* Error state */}
       {error && (
-        <div className="mb-6 rounded-lg bg-error/10 border border-error/20 px-4 py-3 text-sm text-error">
-          {error}
-          <button
-            onClick={() => {
-              setError(null);
-              if (step === "service") fetchServices();
-            }}
-            className="ml-2 underline"
-          >
-            Réessayer
-          </button>
+        <div className="mb-6 rounded-lg bg-error/10 border border-error/20 px-4 py-3">
+          <p className="text-sm text-error">{error}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={() => {
+                setError(null);
+                if (step === "service") fetchServices();
+              }}
+              className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary-dark"
+            >
+              Réessayer
+            </button>
+            {step !== "service" && (
+              <button
+                onClick={() => { setError(null); setStep("service"); }}
+                className="rounded-full border border-primary px-4 py-1.5 text-xs font-medium text-primary hover:bg-accent-light"
+              >
+                Changer de prestation
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {/* Slot expired warning */}
       {slotExpired && (
-        <div className="mb-6 rounded-lg bg-error/10 border border-error/20 px-4 py-3 text-sm text-error">
-          Ce créneau n&apos;est plus disponible. Une autre cliente l&apos;a réservé entre-temps.
-          <button onClick={handleBackToSlots} className="ml-2 underline font-medium">
-            Choisir un autre créneau
-          </button>
+        <div className="mb-6 rounded-lg bg-error/10 border border-error/20 px-4 py-3">
+          <p className="text-sm text-error">
+            Ce créneau n&apos;est plus disponible. Une autre cliente l&apos;a réservé entre-temps.
+          </p>
+          <div className="mt-2">
+            <button
+              onClick={handleBackToSlots}
+              className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white hover:bg-primary-dark"
+            >
+              Choisir un autre créneau
+            </button>
+          </div>
         </div>
       )}
 
