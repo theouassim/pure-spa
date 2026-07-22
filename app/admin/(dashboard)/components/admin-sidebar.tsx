@@ -12,6 +12,7 @@ import {
   LogOut,
   HeartPulse,
   Bug,
+  Plug,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { href: "/admin/clients", label: "Clients", icon: Users },
   { href: "/admin/facturation", label: "Facturation", icon: Receipt },
   { href: "/admin/analytics", label: "Analytics", icon: TrendingUp },
+  { href: "/admin/connecteurs", label: "Connecteurs", icon: Plug },
   { href: "/admin/configuration", label: "Configuration", icon: Settings },
   { href: "/admin/diagnostic", label: "Diagnostic", icon: HeartPulse },
 ];
