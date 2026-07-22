@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import Link from "next/link";
+import Image from "next/image";
 
 export const metadata = {
   title: "Réservation confirmée — Pure Spa Institut",
@@ -50,9 +51,7 @@ export default async function ConfirmationPage({ searchParams }: Props) {
     <main className="flex-1 flex flex-col">
       <header className="border-b border-border bg-bg-card py-4 px-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-primary tracking-tight">
-            Pure Spa Institut
-          </h1>
+          <Image src="/logo.png" alt="Pure SPA" width={140} height={42} />
         </div>
       </header>
 
