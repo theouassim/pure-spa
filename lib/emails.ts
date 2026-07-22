@@ -419,3 +419,63 @@ export async function sendBookingModification(
     console.error("[emails] Erreur envoi modification:", err);
   }
 }
+
+// --- Alerte vérification (Planity injoignable) ---
+
+export interface VerificationAlertInput {
+  bookingId: string;
+  serviceId: string;
+  startAt: string;
+  endAt: string;
+  clientId: string;
+}
+
+export async function sendVerificationAlert(input: VerificationAlertInput): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+
+  const { data: service } = await supabaseAdmin
+    .from("services")
+    .select("nom")
+    .eq("id", input.serviceId)
+    .single();
+
+  const { data: client } = await supabaseAdmin
+    .from("clients")
+    .select("nom, email")
+    .eq("id", input.clientId)
+    .single();
+
+  const { date, heure } = formatDate(input.startAt);
+
+  const content = emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:20px;font-weight:600;color:${COLORS.error};">Vérification requise</h1>
+    <p style="margin:0 0 24px;font-size:14px;color:${COLORS.textMuted};">
+      Une réservation a été enregistrée <strong>sans vérification Planity à jour</strong>
+      (le flux iCal était injoignable au moment du checkout). Merci de confirmer manuellement
+      que le créneau est bien disponible.
+    </p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Cliente", client?.nom ?? "Inconnue")}
+      ${detailRow("Email", client?.email ?? "—")}
+      ${detailRow("Soin", service?.nom ?? "—")}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${date}</span>`)}
+      ${detailRow("Heure", heure)}
+    </table>
+
+    <div style="background:#fef3cd;border-radius:8px;padding:16px 20px;border-left:3px solid #f0ad4e;">
+      <p style="margin:0;font-size:13px;color:#856404;">
+        Si le créneau est en conflit avec un rendez-vous Planity, contactez la cliente pour
+        proposer un autre créneau. Vous pouvez retirer le flag "À vérifier" depuis le
+        dashboard une fois la vérification effectuée.
+      </p>
+    </div>
+  `);
+
+  await resend.emails.send({
+    from: FROM_EMAIL,
+    to: ADMIN_EMAIL,
+    subject: `Vérification requise — ${client?.nom ?? "Réservation"} — ${service?.nom ?? ""}`,
+    html: content,
+  });
+}

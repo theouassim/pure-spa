@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabaseAdmin
     .from("bookings")
-    .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, service:services(id, nom, duree_minutes), client:clients(id, nom, email, telephone)")
+    .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, verification_requise, service:services(id, nom, duree_minutes), client:clients(id, nom, email, telephone)")
     .order("start_at", { ascending: true });
 
   if (statut) query = query.eq("statut", statut);

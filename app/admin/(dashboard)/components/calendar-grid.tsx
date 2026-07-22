@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Calendar, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Filter, AlertTriangle } from "lucide-react";
 import { toZonedTime } from "date-fns-tz";
 import type { CalendarEvent } from "@/app/api/admin/events/route";
 import { EventDetailModal } from "./event-detail-modal";
@@ -207,9 +207,12 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
   const isBooking = event.type === "booking";
   const baseClasses = "absolute overflow-hidden rounded px-1.5 py-0.5 text-[10px] leading-tight transition-opacity";
 
-  const style = isBooking
-    ? "bg-primary/90 text-white border border-primary-dark"
-    : "bg-accent-light/70 text-text-muted border border-border";
+  const verif = isBooking && event.verificationRequise;
+  const style = verif
+    ? "bg-amber-100 text-amber-800 border border-amber-400"
+    : isBooking
+      ? "bg-primary/90 text-white border border-primary-dark"
+      : "bg-accent-light/70 text-text-muted border border-border";
 
   const overbookingStyle = overbooking ? "ring-2 ring-error/60" : "";
   const cursorStyle = isBooking ? "cursor-pointer hover:opacity-80" : "";
@@ -220,7 +223,10 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
       style={{ top: `${top}px`, height: `${Math.max(height, 18)}px`, left, width }}
       onClick={onClick}
     >
-      <div className="truncate font-medium">{event.label}</div>
+      <div className="truncate font-medium flex items-center gap-0.5">
+        {verif && <AlertTriangle size={9} className="shrink-0" />}
+        {event.label}
+      </div>
       {isBooking && event.clientNom && (
         <div className="truncate opacity-80">{event.clientNom}</div>
       )}

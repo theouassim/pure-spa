@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
 
   switch (action) {
     case "sync_planity": {
-      const results = await syncAllSalles();
-      return NextResponse.json({ success: true, results, synced_at: new Date().toISOString() });
+      const { status, results } = await syncAllSalles();
+      return NextResponse.json({ success: true, status, results, synced_at: new Date().toISOString() });
     }
 
     case "seed_bookings": {

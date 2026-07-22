@@ -9,11 +9,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const results = await syncAllSalles();
+  const { status, results } = await syncAllSalles();
 
   return NextResponse.json({
     ok: true,
     synced_at: new Date().toISOString(),
+    status,
     results,
   });
 }

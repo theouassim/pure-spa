@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import { getAvailableSlots, assignSlotNumber } from "./availability-service";
 import { syncAllSalles } from "./planity-sync";
+import { sendVerificationAlert } from "./emails";
 import type { StatutPaiement } from "./types";
 
 export interface CreateBookingInput {
@@ -14,7 +15,7 @@ export interface CreateBookingInput {
 }
 
 export type CreateBookingResult =
-  | { success: true; bookingId: string }
+  | { success: true; bookingId: string; verificationRequise: boolean }
   | { success: false; reason: "slot_expired" | "no_slot" | "db_error" | "service_not_found" };
 
 export async function createBooking(input: CreateBookingInput): Promise<CreateBookingResult> {
@@ -33,8 +34,17 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     return { success: false, reason: "service_not_found" };
   }
 
+  let verificationRequise = false;
+
   if (!allowOverride) {
-    await syncAllSalles();
+    const { status } = await syncAllSalles();
+
+    if (status === "failed") {
+      // Planity totalement injoignable — on continue mais on flag le booking
+      verificationRequise = true;
+    }
+
+    // Vérification de disponibilité (avec les données fraîches ou cron selon le status)
     const availableSlots = await getAvailableSlots(serviceId, slotStart, { skipDelayCheck: true });
     const stillAvailable = availableSlots.some(
       (s) => s.start.getTime() === slotStart.getTime()
@@ -66,6 +76,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
       montant: service.prix,
       statut_paiement: statutPaiement,
       stripe_payment_id: stripePaymentId,
+      verification_requise: verificationRequise,
     })
     .select("id")
     .single();
@@ -74,7 +85,21 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     return { success: false, reason: "db_error" };
   }
 
-  return { success: true, bookingId: data.id };
+  if (verificationRequise) {
+    try {
+      await sendVerificationAlert({
+        bookingId: data.id,
+        serviceId,
+        startAt,
+        endAt,
+        clientId,
+      });
+    } catch (err) {
+      console.error("[create-booking] Erreur envoi email alerte vérification:", err);
+    }
+  }
+
+  return { success: true, bookingId: data.id, verificationRequise };
 }
 
 async function firstFreeSlotNumber(slotStart: Date, slotEnd: Date): Promise<number> {

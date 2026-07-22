@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertTriangle } from "lucide-react";
 import type { BookingRow } from "./reservations-client";
 
 interface Props {
@@ -54,7 +55,15 @@ export function BookingsList({ bookings, loading, onSelect }: Props) {
                 <PaiementBadge statut={b.statut_paiement} />
               </td>
               <td className="px-4 py-3">
-                <StatutBadge statut={b.statut} />
+                <div className="flex items-center gap-1.5">
+                  <StatutBadge statut={b.statut} />
+                  {b.verification_requise && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700" title="Vérification Planity requise">
+                      <AlertTriangle size={11} />
+                      À vérifier
+                    </span>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

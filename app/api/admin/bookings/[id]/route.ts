@@ -13,6 +13,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (body.start_at) updates.start_at = body.start_at;
   if (body.end_at) updates.end_at = body.end_at;
   if (body.service_id) updates.service_id = body.service_id;
+  if (body.verification_requise === false) updates.verification_requise = false;
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Aucune modification" }, { status: 400 });

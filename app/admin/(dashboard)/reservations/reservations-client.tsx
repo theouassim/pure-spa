@@ -15,6 +15,7 @@ export interface BookingRow {
   montant: number | null;
   statut_paiement: string;
   stripe_payment_id: string | null;
+  verification_requise: boolean;
   service: { id: string; nom: string; duree_minutes: number } | null;
   client: { id: string; nom: string; email: string; telephone: string | null } | null;
 }

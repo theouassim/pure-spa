@@ -13,29 +13,67 @@ interface SyncResult {
   error?: string;
 }
 
+export type SyncStatus = "ok" | "partial" | "failed";
+
+export interface SyncAllResult {
+  status: SyncStatus;
+  results: SyncResult[];
+}
+
 const SALLES: SalleConfig[] = [
   { source: "salle_1", url: process.env.PLANITY_ICAL_SALLE_1 ?? "" },
   { source: "salle_2", url: process.env.PLANITY_ICAL_SALLE_2 ?? "" },
 ];
 
-// Horizon de sync : occurrences récurrentes jusqu'à 3 mois dans le futur
 const SYNC_HORIZON_DAYS = 90;
+const TIMEOUT_MS = 7_000;
+const MAX_RETRIES = 2;
 
-export async function syncAllSalles(): Promise<SyncResult[]> {
-  const results: SyncResult[] = [];
+export async function syncAllSalles(): Promise<SyncAllResult> {
+  const results = await Promise.all(
+    SALLES.map((salle) => syncOneSalleWithRetry(salle))
+  );
 
-  for (const salle of SALLES) {
-    try {
-      const result = await syncOneSalle(salle);
-      results.push(result);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`[planity-sync] Erreur salle ${salle.source}:`, message);
-      results.push({ source: salle.source, upserted: 0, deleted: 0, error: message });
+  const successCount = results.filter((r) => !r.error).length;
+
+  let status: SyncStatus;
+  if (successCount === SALLES.length) {
+    status = "ok";
+  } else if (successCount > 0) {
+    status = "partial";
+    const failed = results.filter((r) => r.error);
+    for (const f of failed) {
+      console.warn(`[planity-sync] Échec sync ${f.source}: ${f.error}`);
+    }
+  } else {
+    status = "failed";
+    for (const f of results) {
+      console.error(`[planity-sync] Échec total sync ${f.source}: ${f.error}`);
     }
   }
 
-  return results;
+  return { status, results };
+}
+
+async function syncOneSalleWithRetry(salle: SalleConfig): Promise<SyncResult> {
+  let lastError: string = "";
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await syncOneSalle(salle);
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (attempt < MAX_RETRIES) {
+        await sleep(500);
+      }
+    }
+  }
+
+  return { source: salle.source, upserted: 0, deleted: 0, error: lastError };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
@@ -43,7 +81,7 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     throw new Error(`URL manquante pour ${salle.source}`);
   }
 
-  const response = await fetch(salle.url, { signal: AbortSignal.timeout(15_000) });
+  const response = await fetch(salle.url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} pour ${salle.source}`);
   }
@@ -67,7 +105,6 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     const durationMs = new Date(event.end).getTime() - new Date(event.start).getTime();
 
     if (event.rrule) {
-      // Expand recurring event into individual occurrences
       const occurrences = event.rrule.between(now, horizon);
       for (const occ of occurrences) {
         const startAt = occ.toISOString();
@@ -75,7 +112,6 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
         events.push({ raw_uid: `${uid}__${startAt}`, start_at: startAt, end_at: endAt });
       }
     } else {
-      // Single event
       const startAt = new Date(event.start).toISOString();
       const endAt = new Date(event.end).toISOString();
       if (isNaN(Date.parse(startAt)) || isNaN(Date.parse(endAt))) continue;
@@ -111,8 +147,6 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     allUids.push(...batch.map((e) => e.raw_uid));
   }
 
-  // Supprimer les events qui ont disparu du flux (annulés côté Planity)
-  // Uniquement pour CETTE salle
   let deleted = 0;
   if (allUids.length > 0) {
     const { data: existing } = await supabaseAdmin
