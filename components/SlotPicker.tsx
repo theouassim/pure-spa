@@ -68,6 +68,7 @@ function toLocalDateStr(date: Date): string {
 }
 
 const DAYS_PER_BATCH = 7;
+const MAX_SEARCH_DAYS = 28;
 
 export function SlotPicker({ service, onSelect, onBack }: Props) {
   const [daysCount, setDaysCount] = useState(DAYS_PER_BATCH);
@@ -75,6 +76,7 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
   const [daySlots, setDaySlots] = useState<DaySlots[]>([]);
   const [tracked, setTracked] = useState(false);
   const [expandedDay, setExpandedDay] = useState<string | null>(null);
+  const [searching, setSearching] = useState(true);
 
   useEffect(() => {
     if (!tracked) {
@@ -115,7 +117,8 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadAll() {
+    async function loadAndSeek() {
+      setSearching(true);
       setDaySlots(
         days.map((d) => ({
           date: d.dateStr,
@@ -148,6 +151,17 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
         };
       });
 
+      const hasAnySlot = loaded.some((d) => d.slots.length > 0);
+
+      if (!hasAnySlot && daysCount < MAX_SEARCH_DAYS) {
+        // All days empty — auto-advance to search further
+        if (!cancelled) {
+          setDaysCount((c) => c + DAYS_PER_BATCH);
+        }
+        return;
+      }
+
+      setSearching(false);
       setDaySlots(loaded);
 
       setExpandedDay((prev) => {
@@ -157,9 +171,9 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
       });
     }
 
-    loadAll();
+    loadAndSeek();
     return () => { cancelled = true; };
-  }, [days, fetchSlotsForDay]);
+  }, [days, fetchSlotsForDay, daysCount]);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -173,13 +187,31 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
     setWeekStart(addDays(weekStart, -DAYS_PER_BATCH));
     setDaysCount(DAYS_PER_BATCH);
     setExpandedDay(null);
+    setSearching(true);
   }
 
   function handleNextWeek() {
     setWeekStart(addDays(weekStart, DAYS_PER_BATCH));
     setDaysCount(DAYS_PER_BATCH);
     setExpandedDay(null);
+    setSearching(true);
   }
+
+  // For desktop grid: show the 7 days starting from the first day that has slots (or from weekStart)
+  const desktopStartIdx = useMemo(() => {
+    if (searching) return 0;
+    const idx = daySlots.findIndex((d) => d.slots.length > 0);
+    return idx >= 0 ? idx : 0;
+  }, [daySlots, searching]);
+
+  const desktopDays = daySlots.slice(desktopStartIdx, desktopStartIdx + DAYS_PER_BATCH);
+
+  // For mobile: only show days starting from first available
+  const mobileDays = useMemo(() => {
+    if (searching) return daySlots;
+    const idx = daySlots.findIndex((d) => d.slots.length > 0);
+    return idx >= 0 ? daySlots.slice(idx) : daySlots;
+  }, [daySlots, searching]);
 
   return (
     <div>
@@ -197,79 +229,93 @@ export function SlotPicker({ service, onSelect, onBack }: Props) {
         </div>
       </div>
 
-      {/* Desktop: grid view with week navigation */}
-      <div className="hidden md:block">
-        <div className="flex items-center justify-between mb-4">
-          <button
-            onClick={handlePrevWeek}
-            disabled={!canGoPrev}
-            className="p-2 rounded-full hover:bg-accent-light transition-colors disabled:opacity-30 disabled:cursor-default"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <span className="text-sm font-medium text-text">
-            {formatDateLabel(weekStart)} — {formatDateLabel(addDays(weekStart, DAYS_PER_BATCH - 1))}
-          </span>
-          <button
-            onClick={handleNextWeek}
-            className="p-2 rounded-full hover:bg-accent-light transition-colors"
-          >
-            <ChevronRight size={20} />
-          </button>
+      {/* Loading state while searching for first available day */}
+      {searching && (
+        <div className="flex flex-col items-center py-8 gap-3">
+          <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          <p className="text-sm text-text-muted">Recherche des prochaines disponibilités...</p>
         </div>
+      )}
 
-        <div className="grid grid-cols-7 gap-2">
-          {daySlots.slice(0, DAYS_PER_BATCH).map((day) => (
-            <div key={day.date} className="flex flex-col">
-              <div className="text-center py-2 border-b border-border mb-2">
-                <div className="text-xs text-text-muted capitalize">{day.dayLabel}</div>
-                <div className="text-sm font-medium">{day.label}</div>
+      {/* Desktop: grid view with week navigation */}
+      {!searching && (
+        <div className="hidden md:block">
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={handlePrevWeek}
+              disabled={!canGoPrev}
+              className="p-2 rounded-full hover:bg-accent-light transition-colors disabled:opacity-30 disabled:cursor-default"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <span className="text-sm font-medium text-text">
+              {desktopDays.length > 0 && (
+                <>{desktopDays[0].label} — {desktopDays[desktopDays.length - 1].label}</>
+              )}
+            </span>
+            <button
+              onClick={handleNextWeek}
+              className="p-2 rounded-full hover:bg-accent-light transition-colors"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-7 gap-2">
+            {desktopDays.map((day) => (
+              <div key={day.date} className="flex flex-col">
+                <div className="text-center py-2 border-b border-border mb-2">
+                  <div className="text-xs text-text-muted capitalize">{day.dayLabel}</div>
+                  <div className="text-sm font-medium">{day.label}</div>
+                </div>
+                <div className="flex flex-col gap-1.5 min-h-[120px]">
+                  {day.loading ? (
+                    <div className="flex flex-col gap-1.5">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="h-8 rounded bg-border/50 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : day.slots.length === 0 ? (
+                    <p className="text-xs text-text-muted/60 text-center py-4">—</p>
+                  ) : (
+                    day.slots.map((slot) => (
+                      <button
+                        key={slot.start}
+                        onClick={() => onSelect(slot)}
+                        className="rounded-md border border-border bg-bg-card px-2 py-1.5 text-sm text-center font-medium text-primary transition-all hover:border-primary hover:bg-accent-light/50"
+                      >
+                        {formatTime(slot.start)}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
-              <div className="flex flex-col gap-1.5 min-h-[120px]">
-                {day.loading ? (
-                  <div className="flex flex-col gap-1.5">
-                    {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-8 rounded bg-border/50 animate-pulse" />
-                    ))}
-                  </div>
-                ) : day.slots.length === 0 ? (
-                  <p className="text-xs text-text-muted/60 text-center py-4">—</p>
-                ) : (
-                  day.slots.map((slot) => (
-                    <button
-                      key={slot.start}
-                      onClick={() => onSelect(slot)}
-                      className="rounded-md border border-border bg-bg-card px-2 py-1.5 text-sm text-center font-medium text-primary transition-all hover:border-primary hover:bg-accent-light/50"
-                    >
-                      {formatTime(slot.start)}
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Mobile: accordion days */}
-      <div className="md:hidden flex flex-col gap-1.5">
-        {daySlots.map((day) => (
-          <DayAccordion
-            key={day.date}
-            day={day}
-            expanded={expandedDay === day.date}
-            onToggle={() => setExpandedDay(expandedDay === day.date ? null : day.date)}
-            onSelect={onSelect}
-          />
-        ))}
+      {!searching && (
+        <div className="md:hidden flex flex-col gap-1.5">
+          {mobileDays.map((day) => (
+            <DayAccordion
+              key={day.date}
+              day={day}
+              expanded={expandedDay === day.date}
+              onToggle={() => setExpandedDay(expandedDay === day.date ? null : day.date)}
+              onSelect={onSelect}
+            />
+          ))}
 
-        <button
-          onClick={handleLoadMore}
-          className="mt-3 w-full rounded-lg border border-border py-3 text-sm font-medium text-primary hover:bg-accent-light/30 transition-colors"
-        >
-          Afficher plus de disponibilités
-        </button>
-      </div>
+          <button
+            onClick={handleLoadMore}
+            className="mt-3 w-full rounded-lg border border-border py-3 text-sm font-medium text-primary hover:bg-accent-light/30 transition-colors"
+          >
+            Afficher plus de disponibilités
+          </button>
+        </div>
+      )}
     </div>
   );
 }
