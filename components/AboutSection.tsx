@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Clock, MapPin, Navigation } from "lucide-react";
 
 interface HoraireOuverture {
@@ -67,6 +68,22 @@ export function AboutSection() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Cover + titre */}
+      <section>
+        <div className="relative w-full aspect-[16/9] rounded-lg overflow-hidden">
+          <Image
+            src="/salon.jpg"
+            alt="Pure Spa — Hair Spa Institut"
+            fill
+            className="object-cover"
+            priority
+          />
+        </div>
+        <h2 className="mt-3 text-lg font-semibold text-text">
+          Pure Spa <span className="text-text-muted font-normal">— Hair Spa Institut</span>
+        </h2>
+      </section>
+
       {/* Adresse */}
       <section>
         <h3 className="flex items-center gap-2 text-sm font-semibold text-text mb-2">
