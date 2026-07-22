@@ -61,7 +61,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
   }
 
-  // Email confirmation client + admin
   const { data: service } = await supabaseAdmin
     .from("services")
     .select("nom, duree_minutes, prix")
@@ -70,7 +69,7 @@ export async function POST(request: NextRequest) {
 
   if (service) {
     await sendBookingConfirmation(
-      { start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
+      { id: result.bookingId, start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
       { nom: contact.nom, email: contact.email },
       service
     );

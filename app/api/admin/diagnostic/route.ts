@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireOwner } from "@/lib/require-owner";
+import { sendBookingConfirmation } from "@/lib/emails";
 
 export async function GET() {
   const ownerCheck = await requireOwner();
@@ -82,4 +83,33 @@ export async function GET() {
     },
     last_booking: lastBookingResult.data?.created_at ?? null,
   });
+}
+
+export async function POST(request: NextRequest) {
+  const ownerCheck = await requireOwner();
+  if (ownerCheck instanceof NextResponse) return ownerCheck;
+
+  const { action, email } = await request.json();
+
+  if (action === "test_email") {
+    if (!email) {
+      return NextResponse.json({ error: "Email requis" }, { status: 400 });
+    }
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: "RESEND_API_KEY non configurée" }, { status: 500 });
+    }
+
+    try {
+      await sendBookingConfirmation(
+        { id: `test-${Date.now()}`, start_at: new Date().toISOString(), montant: 6500, statut_paiement: "paye_en_ligne" },
+        { nom: "Cliente Test", email },
+        { nom: "Soin Relaxant", duree_minutes: 60 }
+      );
+      return NextResponse.json({ success: true, message: `Email envoyé à ${email}` });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({ error: "Action inconnue" }, { status: 400 });
 }

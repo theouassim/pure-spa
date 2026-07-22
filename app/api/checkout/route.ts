@@ -43,8 +43,10 @@ export async function POST(request: NextRequest) {
   }
 
   // POINT CRITIQUE — refetch Planity live puis revérification du créneau
+  // skipDelayCheck: le créneau a déjà été validé côté affichage,
+  // on ne re-filtre pas par delai_min (la cliente est dans le tunnel)
   await syncAllSalles();
-  const availableSlots = await getAvailableSlots(serviceId, slotStart);
+  const availableSlots = await getAvailableSlots(serviceId, slotStart, { skipDelayCheck: true });
   const stillAvailable = availableSlots.some(
     (s) => s.start.getTime() === slotStart.getTime()
   );

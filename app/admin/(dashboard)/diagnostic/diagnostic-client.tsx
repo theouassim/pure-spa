@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { HeartPulse, CheckCircle, AlertTriangle, Activity, RefreshCw, CreditCard, Calendar } from "lucide-react";
+import { HeartPulse, CheckCircle, AlertTriangle, Activity, RefreshCw, CreditCard, Calendar, Mail, Send } from "lucide-react";
 
 interface DiagnosticData {
   global_status: "ok" | "warning" | "error";
@@ -134,6 +134,9 @@ export function DiagnosticClient() {
         </HealthCard>
       </div>
 
+      {/* Test email */}
+      <EmailTestCard />
+
       <p className="text-[11px] text-text-muted">
         Logs détaillés disponibles sur le dashboard Vercel (onglet Functions).
       </p>
@@ -182,6 +185,68 @@ function HealthCard({
         {status === "warning" && <AlertTriangle size={12} className="text-error" />}
       </div>
       {children}
+    </div>
+  );
+}
+
+function EmailTestCard() {
+  const [email, setEmail] = useState("");
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleSend() {
+    if (!email) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/diagnostic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test_email", email }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult({ ok: true, message: data.message });
+      } else {
+        setResult({ ok: false, message: data.error });
+      }
+    } catch {
+      setResult({ ok: false, message: "Erreur réseau" });
+    }
+    setSending(false);
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Mail size={14} className="text-primary" />
+        <h3 className="text-sm font-medium text-text">Test email</h3>
+      </div>
+      <p className="mb-3 text-xs text-text-muted">
+        Envoie un email de confirmation fictif pour vérifier que Resend fonctionne.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="adresse@email.com"
+          className="flex-1 rounded-md border border-border px-3 py-1.5 text-sm focus:border-primary focus:outline-none"
+        />
+        <button
+          onClick={handleSend}
+          disabled={sending || !email}
+          className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+        >
+          <Send size={12} />
+          {sending ? "Envoi..." : "Envoyer"}
+        </button>
+      </div>
+      {result && (
+        <p className={`mt-2 text-xs ${result.ok ? "text-success" : "text-error"}`}>
+          {result.message}
+        </p>
+      )}
     </div>
   );
 }

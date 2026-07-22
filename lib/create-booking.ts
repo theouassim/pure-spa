@@ -35,7 +35,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
 
   if (!allowOverride) {
     await syncAllSalles();
-    const availableSlots = await getAvailableSlots(serviceId, slotStart);
+    const availableSlots = await getAvailableSlots(serviceId, slotStart, { skipDelayCheck: true });
     const stillAvailable = availableSlots.some(
       (s) => s.start.getTime() === slotStart.getTime()
     );

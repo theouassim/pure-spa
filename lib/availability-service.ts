@@ -13,7 +13,8 @@ import type { AdminSettings, Service } from "./types";
  */
 export async function getAvailableSlots(
   serviceId: string,
-  date: Date
+  date: Date,
+  options?: { skipDelayCheck?: boolean }
 ): Promise<AvailableSlot[]> {
   const settings = await fetchSettings();
   if (!settings) return [];
@@ -42,6 +43,7 @@ export async function getAvailableSlots(
       end: new Date(e.end_at),
     })),
     now: new Date(),
+    skipDelayCheck: options?.skipDelayCheck,
   });
 }
 

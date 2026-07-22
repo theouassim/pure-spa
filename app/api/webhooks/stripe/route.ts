@@ -53,7 +53,6 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   });
 
   if (!result.success) {
-    // Créneau pris ou plus de slot — rembourser automatiquement
     if (session.payment_intent) {
       await stripe.refunds.create({
         payment_intent: session.payment_intent as string,
@@ -81,7 +80,6 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     service_id: meta.service_id,
   });
 
-  // Email confirmation client + admin
   const { data: service } = await supabaseAdmin
     .from("services")
     .select("nom, duree_minutes")
@@ -95,7 +93,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   if (service && client) {
     await sendBookingConfirmation(
-      { start_at: meta.start_at, montant: session.amount_total, statut_paiement: "paye_en_ligne" },
+      { id: result.bookingId, start_at: meta.start_at, montant: session.amount_total, statut_paiement: "paye_en_ligne" },
       client,
       service
     );

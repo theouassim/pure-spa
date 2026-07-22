@@ -175,19 +175,13 @@ export async function POST(request: NextRequest) {
       }
 
       try {
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            from: "Pure Spa <noreply@purespa.fr>",
-            to: email,
-            subject: "[TEST] Email de vérification Pure Spa",
-            html: "<h2>Email de test Pure Spa</h2><p>Ce message confirme que l'envoi d'emails fonctionne correctement.</p>",
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) return NextResponse.json({ error: data.message ?? "Erreur Resend" }, { status: 500 });
-        return NextResponse.json({ success: true, message: `Email envoyé à ${email}` });
+        const { sendBookingConfirmation } = await import("@/lib/emails");
+        await sendBookingConfirmation(
+          { id: "test-debug", start_at: new Date().toISOString(), montant: 6500, statut_paiement: "paye_en_ligne" },
+          { nom: "Cliente Test", email },
+          { nom: "Soin Relaxant", duree_minutes: 60 }
+        );
+        return NextResponse.json({ success: true, message: `Email de test envoyé à ${email}` });
       } catch (err) {
         return NextResponse.json({ error: String(err) }, { status: 500 });
       }
