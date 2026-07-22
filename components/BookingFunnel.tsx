@@ -28,6 +28,12 @@ export interface ContactData {
   telephone: string;
 }
 
+interface CategoryConfig {
+  nom: string;
+  ouverte_par_defaut: boolean;
+  position: number;
+}
+
 type Step = "service" | "slot" | "contact" | "summary";
 
 const STEP_LABELS: Record<Step, string> = {
@@ -43,6 +49,7 @@ export function BookingFunnel() {
   const [step, setStep] = useState<Step>("service");
   const [services, setServices] = useState<ServiceData[]>([]);
   const [telephoneContact, setTelephoneContact] = useState("");
+  const [categories, setCategories] = useState<CategoryConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +73,7 @@ export function BookingFunnel() {
       const data = await res.json();
       setServices(data.services);
       setTelephoneContact(data.telephone_contact);
+      setCategories(data.categories ?? []);
     } catch {
       setError("Impossible de charger les prestations. Veuillez réessayer.");
     } finally {
@@ -150,7 +158,7 @@ export function BookingFunnel() {
   const currentStepIdx = STEPS.indexOf(step);
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-8">
+    <div className="w-full max-w-4xl mx-auto px-4">
       {/* Progress bar */}
       <nav className="mb-8">
         <ol className="flex items-center gap-2">
@@ -224,6 +232,7 @@ export function BookingFunnel() {
           services={services}
           telephoneContact={telephoneContact}
           loading={loading}
+          categories={categories}
           onSelect={handleServiceSelect}
         />
       )}

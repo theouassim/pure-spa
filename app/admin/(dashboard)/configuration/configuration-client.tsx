@@ -8,6 +8,7 @@ import { PausesSection } from "./pauses-section";
 import { ParametresSection } from "./parametres-section";
 import { MembresSection } from "./membres-section";
 import { ServicesSection } from "./services-section";
+import { CategoriesSection } from "./categories-section";
 
 export function ConfigurationClient() {
   const [settings, setSettings] = useState<AdminSettings | null>(null);
@@ -84,6 +85,8 @@ export function ConfigurationClient() {
       />
 
       <ServicesSection />
+
+      <CategoriesSection />
 
       <MembresSection />
 

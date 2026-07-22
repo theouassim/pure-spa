@@ -1,16 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { ServiceData } from "./BookingFunnel";
+
+interface CategoryConfig {
+  nom: string;
+  ouverte_par_defaut: boolean;
+  position: number;
+}
 
 interface Props {
   services: ServiceData[];
   telephoneContact: string;
   loading: boolean;
+  categories: CategoryConfig[];
   onSelect: (service: ServiceData) => void;
 }
 
-export function ServicePicker({ services, telephoneContact, loading, onSelect }: Props) {
+export function ServicePicker({ services, telephoneContact, loading, categories, onSelect }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (loading) {
@@ -38,96 +46,173 @@ export function ServicePicker({ services, telephoneContact, loading, onSelect }:
     return acc;
   }, {});
 
-  function formatPrice(cents: number) {
-    return new Intl.NumberFormat("fr-FR", {
-      style: "currency",
-      currency: "EUR",
-    }).format(cents / 100);
-  }
-
-  function formatDuration(minutes: number) {
-    if (minutes < 60) return `${minutes} min`;
-    const h = Math.floor(minutes / 60);
-    const m = minutes % 60;
-    return m > 0 ? `${h}h${m.toString().padStart(2, "0")}` : `${h}h`;
-  }
+  const sortedCategories = Object.keys(grouped).sort((a, b) => {
+    const posA = categories.find((c) => c.nom === a)?.position ?? 999;
+    const posB = categories.find((c) => c.nom === b)?.position ?? 999;
+    return posA - posB || a.localeCompare(b);
+  });
 
   return (
-    <div className="flex flex-col gap-8">
-      {Object.entries(grouped).map(([categorie, items]) => (
-        <section key={categorie}>
-          <h2 className="text-lg font-semibold text-primary mb-3">{categorie}</h2>
-          <div className="flex flex-col gap-3">
-            {items.map((service) => (
-              <div
-                key={service.id}
-                className="rounded-lg border border-border bg-bg-card p-4 transition-shadow hover:shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h3 className="font-medium text-text">{service.nom}</h3>
-                      <span className="text-xs text-text-muted bg-accent-light px-2 py-0.5 rounded-full">
-                        {formatDuration(service.duree_minutes)}
-                      </span>
-                    </div>
-                    {service.description && (
-                      <div className="mt-1">
-                        {expandedId === service.id ? (
-                          <p className="text-sm text-text-muted">{service.description}</p>
-                        ) : (
-                          <button
-                            onClick={() => setExpandedId(service.id)}
-                            className="text-sm text-primary-light hover:text-primary transition-colors"
-                          >
-                            Détails
-                          </button>
-                        )}
-                        {expandedId === service.id && (
-                          <button
-                            onClick={() => setExpandedId(null)}
-                            className="text-xs text-text-muted ml-2 hover:text-text"
-                          >
-                            Masquer
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <span className="font-semibold text-text">
-                      {formatPrice(service.prix)}
-                    </span>
-                    {service.reservable_en_ligne ? (
-                      <button
-                        onClick={() => onSelect(service)}
-                        className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-dark"
-                      >
-                        Choisir
-                      </button>
-                    ) : (
-                      <span className="text-xs text-text-muted text-right max-w-[160px]">
-                        Réservation par téléphone
-                        {telephoneContact && (
-                          <>
-                            {" "}au{" "}
-                            <a
-                              href={`tel:${telephoneContact}`}
-                              className="text-primary font-medium whitespace-nowrap"
-                            >
-                              {telephoneContact}
-                            </a>
-                          </>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+    <div className="flex flex-col gap-2">
+      {sortedCategories.map((categorie, idx) => (
+        <CategoryAccordion
+          key={categorie}
+          categorie={categorie}
+          services={grouped[categorie]}
+          telephoneContact={telephoneContact}
+          defaultOpen={
+            categories.find((c) => c.nom === categorie)?.ouverte_par_defaut ?? idx === 0
+          }
+          expandedServiceId={expandedId}
+          onToggleDescription={setExpandedId}
+          onSelect={onSelect}
+        />
       ))}
     </div>
   );
+}
+
+function CategoryAccordion({
+  categorie,
+  services,
+  telephoneContact,
+  defaultOpen,
+  expandedServiceId,
+  onToggleDescription,
+  onSelect,
+}: {
+  categorie: string;
+  services: ServiceData[];
+  telephoneContact: string;
+  defaultOpen: boolean;
+  expandedServiceId: string | null;
+  onToggleDescription: (id: string | null) => void;
+  onSelect: (service: ServiceData) => void;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="rounded-lg border border-border overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-bg-card hover:bg-accent-light/30 transition-colors"
+      >
+        <span className="text-sm font-semibold text-text">{categorie}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-text-muted">{services.length} soin{services.length > 1 ? "s" : ""}</span>
+          <ChevronDown
+            size={16}
+            className={`text-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
+        </div>
+      </button>
+
+      {open && (
+        <div className="border-t border-border divide-y divide-border/50">
+          {services.map((service) => (
+            <ServiceItem
+              key={service.id}
+              service={service}
+              telephoneContact={telephoneContact}
+              expanded={expandedServiceId === service.id}
+              onToggleDescription={() =>
+                onToggleDescription(expandedServiceId === service.id ? null : service.id)
+              }
+              onSelect={() => onSelect(service)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ServiceItem({
+  service,
+  telephoneContact,
+  expanded,
+  onToggleDescription,
+  onSelect,
+}: {
+  service: ServiceData;
+  telephoneContact: string;
+  expanded: boolean;
+  onToggleDescription: () => void;
+  onSelect: () => void;
+}) {
+  return (
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-medium text-text">{service.nom}</h3>
+            <span className="text-xs text-text-muted bg-accent-light px-2 py-0.5 rounded-full">
+              {formatDuration(service.duree_minutes)}
+            </span>
+          </div>
+          {service.description && (
+            <div className="mt-1">
+              {expanded ? (
+                <>
+                  <p className="text-xs text-text-muted leading-relaxed">{service.description}</p>
+                  <button
+                    onClick={onToggleDescription}
+                    className="text-xs text-text-muted/70 hover:text-text mt-0.5"
+                  >
+                    Masquer
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={onToggleDescription}
+                  className="text-xs text-primary-light hover:text-primary transition-colors"
+                >
+                  Détails
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className="text-sm font-semibold text-text">
+            {formatPrice(service.prix)}
+          </span>
+          {service.reservable_en_ligne ? (
+            <button
+              onClick={onSelect}
+              className="rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-dark"
+            >
+              Choisir
+            </button>
+          ) : (
+            <span className="text-xs text-text-muted text-right max-w-[140px]">
+              Réservation par téléphone
+              {telephoneContact && (
+                <>
+                  {" "}au{" "}
+                  <a
+                    href={`tel:${telephoneContact}`}
+                    className="text-primary font-medium whitespace-nowrap"
+                  >
+                    {telephoneContact}
+                  </a>
+                </>
+              )}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatPrice(cents: number) {
+  return new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" }).format(cents / 100);
+}
+
+function formatDuration(minutes: number) {
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h${m.toString().padStart(2, "0")}` : `${h}h`;
 }
