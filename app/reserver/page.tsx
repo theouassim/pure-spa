@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { BookingFunnel } from "@/components/BookingFunnel";
 
 export const metadata = {
@@ -10,9 +11,7 @@ export default function ReserverPage() {
     <main className="flex-1 flex flex-col">
       <header className="border-b border-border bg-bg-card py-4 px-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-primary tracking-tight">
-            Pure Spa Institut
-          </h1>
+          <Image src="/logo.png" alt="Pure SPA" width={140} height={42} priority />
           <span className="text-sm text-text-muted">Réservation en ligne</span>
         </div>
       </header>
