@@ -64,20 +64,26 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     }
   }
 
+  const insertData: Record<string, unknown> = {
+    service_id: serviceId,
+    client_id: clientId,
+    start_at: startAt,
+    end_at: endAt,
+    slot_number: slotNumber,
+    statut: "confirmed",
+    montant: service.prix,
+    statut_paiement: statutPaiement,
+    stripe_payment_id: stripePaymentId,
+  };
+
+  if (verificationRequise) {
+    insertData.verification_requise = true;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await supabaseAdmin
     .from("bookings")
-    .insert({
-      service_id: serviceId,
-      client_id: clientId,
-      start_at: startAt,
-      end_at: endAt,
-      slot_number: slotNumber,
-      statut: "confirmed",
-      montant: service.prix,
-      statut_paiement: statutPaiement,
-      stripe_payment_id: stripePaymentId,
-      verification_requise: verificationRequise,
-    })
+    .insert(insertData as any)
     .select("id")
     .single();
 

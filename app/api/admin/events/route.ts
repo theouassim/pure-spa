@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
   const [bookingsResult, externalsResult] = await Promise.all([
     supabaseAdmin
       .from("bookings")
-      .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, verification_requise, service:services(nom, duree_minutes), client:clients(nom, email, telephone)")
+      .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, service:services(nom, duree_minutes), client:clients(nom, email, telephone)")
       .neq("statut", "cancelled")
       .gte("start_at", from)
       .lte("start_at", to),
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
       statutPaiement: b.statut_paiement,
       statut: b.statut,
       stripePaymentId: b.stripe_payment_id,
-      verificationRequise: b.verification_requise || undefined,
+      verificationRequise: (b as Record<string, unknown>).verification_requise ? true : undefined,
     });
   }
 
