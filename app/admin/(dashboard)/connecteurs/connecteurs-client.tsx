@@ -57,6 +57,18 @@ const CONNECTOR_META: Record<
       "Copiez ce nombre",
     ],
   },
+  tiktok_pixel: {
+    label: "TikTok Pixel",
+    description: "Suivez les conversions et optimisez vos campagnes publicitaires TikTok.",
+    placeholder: "CXXXXXXXXXXXXXXXXX",
+    steps: [
+      "Connectez-vous sur ads.tiktok.com",
+      "Allez dans Outils → Événements",
+      "Sélectionnez Gestion du pixel web",
+      "Créez un pixel ou sélectionnez un pixel existant",
+      "Copiez l'ID du pixel (format alphanumérique commençant par C)",
+    ],
+  },
 };
 
 export function ConnecteursClient() {
