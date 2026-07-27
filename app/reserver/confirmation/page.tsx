@@ -50,7 +50,7 @@ export default async function ConfirmationPage({ searchParams }: Props) {
   return (
     <main className="flex-1 flex flex-col">
       <header className="border-b border-border bg-bg-card py-4 px-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-4xl mx-auto flex items-center justify-center">
           <Image src="/logo.png" alt="Pure SPA" width={140} height={42} />
         </div>
       </header>
