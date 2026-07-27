@@ -26,7 +26,7 @@ export default async function ConfirmationPage({ searchParams }: Props) {
       .single();
 
     if (!booking) {
-      redirect("/reserver");
+      redirect("/");
     }
     startAt = new Date(booking.start_at);
   } else if (params.session_id) {
@@ -35,16 +35,16 @@ export default async function ConfirmationPage({ searchParams }: Props) {
     try {
       session = await stripe.checkout.sessions.retrieve(params.session_id);
     } catch {
-      redirect("/reserver");
+      redirect("/");
     }
 
     if (session.payment_status !== "paid") {
-      redirect("/reserver");
+      redirect("/");
     }
 
     startAt = session.metadata?.start_at ? new Date(session.metadata.start_at) : null;
   } else {
-    redirect("/reserver");
+    redirect("/");
   }
 
   return (
@@ -99,7 +99,7 @@ export default async function ConfirmationPage({ searchParams }: Props) {
           </p>
 
           <Link
-            href="/reserver"
+            href="/"
             className="inline-block rounded-full bg-primary px-6 py-2.5 text-sm text-white font-medium transition-colors hover:bg-primary-dark"
           >
             Réserver un autre soin
