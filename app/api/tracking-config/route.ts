@@ -14,6 +14,8 @@ export async function GET() {
     gtm_enabled: false,
     meta_pixel_id: null as string | null,
     meta_pixel_enabled: false,
+    tiktok_pixel_id: null as string | null,
+    tiktok_pixel_enabled: false,
   };
 
   if (data) {
@@ -27,6 +29,9 @@ export async function GET() {
       } else if (row.connector_type === "meta_pixel") {
         config.meta_pixel_id = row.connector_id;
         config.meta_pixel_enabled = true;
+      } else if (row.connector_type === "tiktok_pixel") {
+        config.tiktok_pixel_id = row.connector_id;
+        config.tiktok_pixel_enabled = true;
       }
     }
   }

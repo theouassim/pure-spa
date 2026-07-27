@@ -2,12 +2,13 @@ import { NextResponse, NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireOwner } from "@/lib/require-owner";
 
-const VALID_TYPES = ["ga4", "gtm", "meta_pixel"] as const;
+const VALID_TYPES = ["ga4", "gtm", "meta_pixel", "tiktok_pixel"] as const;
 
 const FORMAT_PATTERNS: Record<string, RegExp> = {
   ga4: /^G-[A-Z0-9]{4,12}$/,
   gtm: /^GTM-[A-Z0-9]{4,12}$/,
   meta_pixel: /^\d{10,20}$/,
+  tiktok_pixel: /^[A-Z0-9]{10,30}$/i,
 };
 
 export async function GET() {
@@ -68,6 +69,7 @@ function getFormatHint(type: string): string {
     case "ga4": return "G-XXXXXXXXXX";
     case "gtm": return "GTM-XXXXXXX";
     case "meta_pixel": return "Un nombre de 10 à 20 chiffres";
+    case "tiktok_pixel": return "Code alphanumérique (ex: CXXXXXXXXXXXXXXXXX)";
     default: return "";
   }
 }
