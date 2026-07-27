@@ -8,8 +8,8 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "contact@purespainstitut.com";
 const LOGO_URL = "https://booking.purespainstitut.com/logo.png";
 
 const INSTITUT_NOM = "Pure SPA — Hair Spa Institut";
-const INSTITUT_ADRESSE = "123 rue du Spa, 75001 Paris";
-const INSTITUT_TELEPHONE = "01 23 45 67 89";
+const INSTITUT_ADRESSE = "36 Rue Aristide Briand, 69800 Saint Priest";
+const INSTITUT_TELEPHONE = "07 59 40 40 39";
 
 // --- Types ---
 
@@ -23,6 +23,7 @@ export interface BookingEmailData {
   duree: number;
   montant: number | null;
   statutPaiement: string;
+  startAtISO: string;
 }
 
 // --- Formatage ---
@@ -84,6 +85,7 @@ export function buildEmailData(
     duree: service.duree_minutes,
     montant: booking.montant,
     statutPaiement: booking.statut_paiement,
+    startAtISO: booking.start_at,
   };
 }
 
@@ -155,6 +157,39 @@ function badge(text: string, color: string, bgColor: string): string {
   return `<span style="display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;color:${color};background:${bgColor};">${text}</span>`;
 }
 
+// --- Liens calendrier ---
+
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://booking.purespainstitut.com";
+
+function calendarLinks(data: BookingEmailData): { google: string; ics: string } {
+  const start = new Date(data.startAtISO);
+  const end = new Date(start.getTime() + data.duree * 60_000);
+
+  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const title = encodeURIComponent(`${data.serviceNom} — Pure SPA Institut`);
+  const location = encodeURIComponent("36 Rue Aristide Briand, 69800 Saint Priest");
+  const details = encodeURIComponent("Merci de vous présenter 5 minutes avant l'heure de votre rendez-vous.");
+
+  const google = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${fmt(start)}/${fmt(end)}&location=${location}&details=${details}`;
+
+  const ics = `${SITE_URL}/api/calendar?title=${title}&start=${start.toISOString()}&end=${end.toISOString()}&location=${location}`;
+
+  return { google, ics };
+}
+
+function calendarButtonsHtml(data: BookingEmailData): string {
+  const { google, ics } = calendarLinks(data);
+  const btnStyle = `display:inline-block;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;text-decoration:none;margin-right:8px;margin-bottom:8px;`;
+
+  return `
+    <div style="margin-bottom:24px;">
+      <p style="margin:0 0 12px;font-size:13px;color:${COLORS.textMuted};">Ajouter à mon agenda :</p>
+      <a href="${google}" target="_blank" style="${btnStyle}background:${COLORS.primary};color:#ffffff;">Google Agenda</a>
+      <a href="${ics}" target="_blank" style="${btnStyle}background:${COLORS.accentLight};color:${COLORS.primaryDark};border:1px solid ${COLORS.border};">Apple / Outlook (.ics)</a>
+    </div>
+  `;
+}
+
 // --- Templates ---
 
 function confirmationClientHtml(data: BookingEmailData): string {
@@ -175,6 +210,8 @@ function confirmationClientHtml(data: BookingEmailData): string {
     </table>
 
     <div style="margin-bottom:24px;">${paiementBadge}</div>
+
+    ${calendarButtonsHtml(data)}
 
     <div style="background:${COLORS.accentLight};border-radius:8px;padding:16px 20px;border-left:3px solid ${COLORS.accent};">
       <p style="margin:0;font-size:13px;color:${COLORS.primaryDark};">Merci de vous présenter 5 minutes avant l'heure de votre rendez-vous. Pour toute modification ou annulation, contactez-nous par téléphone.</p>
@@ -272,13 +309,35 @@ function modificationAdminHtml(data: BookingEmailData): string {
   `);
 }
 
+function rappelClientHtml(data: BookingEmailData): string {
+  return emailLayout(`
+    <h1 style="margin:0 0 6px;font-size:22px;font-weight:600;color:${COLORS.text};">Rappel : votre rendez-vous demain</h1>
+    <p style="margin:0 0 28px;font-size:15px;color:${COLORS.textMuted};">Bonjour ${data.clientNom}, nous vous rappelons votre rendez-vous prévu demain.</p>
+
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+      ${detailRow("Soin", data.serviceNom)}
+      ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
+      ${detailRow("Heure", data.heure)}
+      ${detailRow("Durée", `${data.duree} minutes`)}
+    </table>
+
+    ${calendarButtonsHtml(data)}
+
+    <div style="background:${COLORS.accentLight};border-radius:8px;padding:16px 20px;border-left:3px solid ${COLORS.accent};">
+      <p style="margin:0;font-size:13px;color:${COLORS.primaryDark};">Merci de vous présenter 5 minutes avant l'heure de votre rendez-vous. Pour toute modification ou annulation, contactez-nous au ${INSTITUT_TELEPHONE}.</p>
+    </div>
+  `);
+}
+
 // --- Envoi avec gardes ---
 
-async function markEmailSent(bookingId: string, field: "email_confirmation_sent" | "email_annulation_sent" | "email_modification_sent") {
+type EmailFlag = "email_confirmation_sent" | "email_annulation_sent" | "email_modification_sent" | "email_rappel_sent";
+
+async function markEmailSent(bookingId: string, field: EmailFlag) {
   await supabaseAdmin.from("bookings").update({ [field]: true }).eq("id", bookingId);
 }
 
-async function isEmailAlreadySent(bookingId: string, field: "email_confirmation_sent" | "email_annulation_sent" | "email_modification_sent"): Promise<boolean> {
+async function isEmailAlreadySent(bookingId: string, field: EmailFlag): Promise<boolean> {
   try {
     const { data } = await supabaseAdmin
       .from("bookings")
@@ -417,6 +476,36 @@ export async function sendBookingModification(
     await markEmailSent(booking.id, "email_modification_sent");
   } catch (err) {
     console.error("[emails] Erreur envoi modification:", err);
+  }
+}
+
+// --- Rappel 24h ---
+
+export async function sendBookingReminder(
+  booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
+  client: { nom: string; email: string | null },
+  service: { nom: string; duree_minutes: number }
+): Promise<void> {
+  if (!process.env.RESEND_API_KEY) return;
+  if (!client.email) return;
+
+  try {
+    const alreadySent = await isEmailAlreadySent(booking.id, "email_rappel_sent");
+    if (alreadySent) return;
+
+    const data = buildEmailData(booking, client, service);
+    const { dateShort } = formatDate(booking.start_at);
+
+    await resend.emails.send({
+      from: FROM_EMAIL,
+      to: client.email,
+      subject: `Rappel — ${data.serviceNom} demain à ${data.heure}`,
+      html: rappelClientHtml(data),
+    });
+
+    await markEmailSent(booking.id, "email_rappel_sent");
+  } catch (err) {
+    console.error("[emails] Erreur envoi rappel:", err);
   }
 }
 
