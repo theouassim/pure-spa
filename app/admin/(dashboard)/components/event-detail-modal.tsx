@@ -1,6 +1,6 @@
 "use client";
 
-import { X, User, Phone, Mail, Clock, CreditCard } from "lucide-react";
+import { X, User, Phone, Mail, Clock, CreditCard, Calendar } from "lucide-react";
 import type { CalendarEvent } from "@/app/api/admin/events/route";
 
 interface EventDetailPanelProps {
@@ -29,6 +29,57 @@ export function EventDetailModal({ event, onClose }: EventDetailPanelProps) {
     minute: "2-digit",
     timeZone: "Europe/Paris",
   });
+
+  const durationMin = Math.round((endDate.getTime() - startDate.getTime()) / 60_000);
+
+  if (event.type === "external") {
+    return (
+      <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+        <div className="absolute inset-0 bg-black/20" />
+        <div
+          className="relative h-full w-full max-w-sm animate-slide-in overflow-y-auto border-l border-border bg-bg-card p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-text">RDV Planity</h3>
+              <p className="mt-0.5 text-sm capitalize text-text-muted">{dateStr}</p>
+            </div>
+            <button onClick={onClose} className="rounded p-1.5 hover:bg-accent-light">
+              <X size={18} />
+            </button>
+          </div>
+
+          <Section>
+            <SectionTitle icon={Clock} label="Horaire" />
+            <p className="text-sm text-text">
+              {startTime} – {endTime}
+              <span className="ml-2 text-text-muted">({durationMin} min)</span>
+            </p>
+          </Section>
+
+          <Section>
+            <SectionTitle icon={Calendar} label="Salle" />
+            <p className="text-sm text-text">
+              {event.salle === "salle_1" ? "Salle 1" : event.salle === "salle_2" ? "Salle 2" : event.salle ?? "—"}
+            </p>
+          </Section>
+
+          <Section>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-text-muted">Source</span>
+              <span className="rounded-full bg-accent-light px-2.5 py-0.5 text-xs font-medium text-text-muted">
+                Planity
+              </span>
+            </div>
+            <p className="mt-2 text-[11px] text-text-muted break-all">
+              UID : {event.id}
+            </p>
+          </Section>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>

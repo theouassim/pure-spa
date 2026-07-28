@@ -194,7 +194,7 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
                       left={pe.left}
                       width={pe.width}
                       overbooking={pe.overbooking}
-                      onClick={pe.event.type === "booking" ? () => setSelectedEvent(pe.event) : undefined}
+                      onClick={() => setSelectedEvent(pe.event)}
                     />
                   ))}
                 </div>
@@ -237,7 +237,7 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
       : "bg-accent-light/70 text-text-muted border border-border";
 
   const overbookingStyle = overbooking ? "ring-2 ring-error/60" : "";
-  const cursorStyle = isBooking ? "cursor-pointer hover:opacity-80" : "";
+  const cursorStyle = "cursor-pointer hover:opacity-80";
 
   return (
     <div
