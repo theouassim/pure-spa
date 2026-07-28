@@ -66,6 +66,19 @@ Plateforme de réservation sur-mesure pour un institut de spa.
 - RDV Planity affichés dans le dashboard admin, visuellement distincts.
 - Synchro **unidirectionnelle** : le site ne renvoie rien vers Planity.
 
+### Battement et durée Planity (décision métier validée le 28/07/2026)
+- Les VEVENT Planity incluent déjà le temps de séchage dans leur durée. **Aucun battement ni turnover n'est appliqué entre un créneau Planity et une réservation interne** : la salle est considérée physiquement libre dès la fin du VEVENT.
+- Le battement par prestation (`battement_min` ou global `battement_minutes`) reste appliqué **uniquement entre deux réservations internes**.
+- Code : `countOverlaps` utilise `rangesOverlap` (sans battement) pour les externals, `overlapsWithBattement` pour les internes.
+
+### Mapping salle physique ↔ slot_number
+- `slot_number` correspond à une salle physique : **slot 1 = Salle 1, slot 2 = Salle 2**.
+- Mapping `calendar_source → slot_number` défini dans `lib/salle-mapping.ts` (source unique de vérité) :
+  - `salle_1` → 1
+  - `salle_2` → 2
+- `assignSlotNumber` tient compte des `external_bookings` pour ne jamais attribuer un slot occupé par Planity.
+- Un `calendar_source` inconnu est traité comme occupant **tous** les slots (fail-safe).
+
 ---
 
 ## 6. Phases de développement
