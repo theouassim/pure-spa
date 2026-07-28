@@ -119,9 +119,18 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     }
   }
 
+  // Suppression complète de la salle puis réinsertion — évite les doublons
+  // si le format des UIDs change entre deux syncs Planity
+  const { data: deletedRows } = await supabaseAdmin
+    .from("external_bookings")
+    .delete()
+    .eq("calendar_source", salle.source)
+    .select("id");
+
+  const deleted = deletedRows?.length ?? 0;
+
   let upserted = 0;
   const batchSize = 50;
-  const allUids: string[] = [];
 
   for (let i = 0; i < events.length; i += batchSize) {
     const batch = events.slice(i, i + batchSize);
@@ -136,36 +145,12 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
 
     const { error } = await supabaseAdmin
       .from("external_bookings")
-      .upsert(rows, { onConflict: "calendar_source,raw_uid" });
+      .insert(rows);
 
     if (error) {
-      console.error(`[planity-sync] Upsert error ${salle.source}:`, error.message);
+      console.error(`[planity-sync] Insert error ${salle.source}:`, error.message);
     } else {
       upserted += batch.length;
-    }
-
-    allUids.push(...batch.map((e) => e.raw_uid));
-  }
-
-  let deleted = 0;
-  if (allUids.length > 0) {
-    const { data: existing } = await supabaseAdmin
-      .from("external_bookings")
-      .select("raw_uid")
-      .eq("calendar_source", salle.source);
-
-    const toDelete = (existing ?? [])
-      .map((r) => r.raw_uid)
-      .filter((uid) => !allUids.includes(uid));
-
-    if (toDelete.length > 0) {
-      const { error } = await supabaseAdmin
-        .from("external_bookings")
-        .delete()
-        .eq("calendar_source", salle.source)
-        .in("raw_uid", toDelete);
-
-      if (!error) deleted = toDelete.length;
     }
   }
 
