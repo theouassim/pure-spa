@@ -203,7 +203,7 @@ interface PlanityBooking {
 
 function PlanityCard() {
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ status: string; results: { source: string; upserted: number; deleted: number; error?: string }[] } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ status: string; results: { source: string; upserted: number; purged: number; error?: string }[] } | null>(null);
   const [bookings, setBookings] = useState<PlanityBooking[] | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -293,7 +293,7 @@ function PlanityCard() {
           <p className="font-medium text-success">Synchro terminée — statut : {syncResult.status}</p>
           {syncResult.results.map((r) => (
             <p key={r.source} className="text-text-muted mt-1">
-              {r.source} : {r.upserted} importés, {r.deleted} supprimés
+              {r.source} : {r.upserted} importés, {r.purged} purgés
               {r.error && <span className="text-error"> — {r.error}</span>}
             </p>
           ))}
