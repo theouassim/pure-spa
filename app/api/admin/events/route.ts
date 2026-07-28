@@ -8,6 +8,9 @@ export interface CalendarEvent {
   end: string;
   label: string;
   salle?: string;
+  icalUid?: string;
+  isDuo?: boolean;
+  salles?: string[];
   serviceNom?: string;
   serviceDuree?: number;
   clientNom?: string;
@@ -18,6 +21,7 @@ export interface CalendarEvent {
   statut?: string;
   stripePaymentId?: string | null;
   verificationRequise?: boolean;
+  slotNumber?: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -32,13 +36,13 @@ export async function GET(request: NextRequest) {
   const [bookingsResult, externalsResult] = await Promise.all([
     supabaseAdmin
       .from("bookings")
-      .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, service:services(nom, duree_minutes), client:clients(nom, email, telephone)")
+      .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, slot_number, service:services(nom, duree_minutes), client:clients(nom, email, telephone)")
       .neq("statut", "cancelled")
       .gte("start_at", from)
       .lte("start_at", to),
     supabaseAdmin
       .from("external_bookings")
-      .select("id, start_at, end_at, calendar_source")
+      .select("id, start_at, end_at, calendar_source, ical_uid, raw_uid")
       .gte("start_at", from)
       .lte("start_at", to),
   ]);
@@ -64,18 +68,46 @@ export async function GET(request: NextRequest) {
       statut: b.statut,
       stripePaymentId: b.stripe_payment_id,
       verificationRequise: (b as Record<string, unknown>).verification_requise ? true : undefined,
+      slotNumber: b.slot_number,
     });
   }
 
-  for (const e of externalsResult.data ?? []) {
-    events.push({
-      id: e.id,
-      type: "external",
-      start: e.start_at,
-      end: e.end_at,
-      label: "Planity",
-      salle: e.calendar_source,
-    });
+  const externalsRaw = externalsResult.data ?? [];
+  const groupedByUid = new Map<string, typeof externalsRaw>();
+  for (const e of externalsRaw) {
+    const uid = e.ical_uid ?? e.raw_uid;
+    const key = `${uid}__${e.start_at}__${e.end_at}`;
+    if (!groupedByUid.has(key)) groupedByUid.set(key, []);
+    groupedByUid.get(key)!.push(e);
+  }
+
+  for (const group of groupedByUid.values()) {
+    const uid = group[0].ical_uid ?? group[0].raw_uid;
+    if (group.length > 1) {
+      const salles = group.map((g) => g.calendar_source).sort();
+      events.push({
+        id: group[0].id,
+        type: "external",
+        start: group[0].start_at,
+        end: group[0].end_at,
+        label: "Planity",
+        salle: group[0].calendar_source,
+        icalUid: uid,
+        isDuo: true,
+        salles,
+      });
+    } else {
+      const e = group[0];
+      events.push({
+        id: e.id,
+        type: "external",
+        start: e.start_at,
+        end: e.end_at,
+        label: "Planity",
+        salle: e.calendar_source,
+        icalUid: uid,
+      });
+    }
   }
 
   return NextResponse.json({ events });

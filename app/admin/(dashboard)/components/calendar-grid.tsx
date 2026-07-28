@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Calendar, Filter, AlertTriangle, RefreshCw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Filter, AlertTriangle, RefreshCw, Users } from "lucide-react";
 import { toZonedTime } from "date-fns-tz";
 import type { CalendarEvent } from "@/app/api/admin/events/route";
 import { EventDetailModal } from "./event-detail-modal";
@@ -61,7 +61,14 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
   const filteredEvents = events.filter((e) => {
     if (sourceFilter === "booking" && e.type !== "booking") return false;
     if (sourceFilter === "external" && e.type !== "external") return false;
-    if (salleFilter !== "all" && e.type === "external" && e.salle !== salleFilter) return false;
+    if (salleFilter !== "all") {
+      if (e.isDuo) return true;
+      if (e.type === "external" && e.salle !== salleFilter) return false;
+      if (e.type === "booking") {
+        const expectedSlot = salleFilter === "salle_1" ? 1 : 2;
+        if (e.slotNumber && e.slotNumber !== expectedSlot) return false;
+      }
+    }
     return true;
   });
 
@@ -147,11 +154,17 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
             {daysOfWeek.map(({ date, isoDay }) => (
               <div
                 key={isoDay}
-                className="border-b border-r border-border px-2 py-2 text-center text-xs font-medium text-text-muted last:border-r-0"
+                className="border-b border-r border-border last:border-r-0"
               >
-                <div>{JOUR_LABELS[isoDay - 1]}</div>
-                <div className="text-sm font-semibold text-text">
-                  {date.getDate()}
+                <div className="px-2 py-1 text-center text-xs font-medium text-text-muted">
+                  <div>{JOUR_LABELS[isoDay - 1]}</div>
+                  <div className="text-sm font-semibold text-text">
+                    {date.getDate()}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 border-t border-border/50">
+                  <div className="py-0.5 text-center text-[9px] text-text-muted border-r border-border/50">S1</div>
+                  <div className="py-0.5 text-center text-[9px] text-text-muted">S2</div>
                 </div>
               </div>
             ))}
@@ -169,13 +182,14 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
             </div>
             {daysOfWeek.map(({ date, isoDay }) => {
               const dayEvents = getEventsForDay(filteredEvents, date);
-              const positioned = positionEvents(dayEvents, nbRessources);
               return (
                 <div
                   key={isoDay}
                   className="relative border-r border-border last:border-r-0"
                   style={{ height: `${amplitude.hours.length * 64}px` }}
                 >
+                  {/* Séparateur central salle 1 / salle 2 */}
+                  <div className="absolute inset-0 left-1/2 w-px bg-border/40" />
                   {/* Lignes horaires */}
                   {amplitude.hours.map((hour) => (
                     <div
@@ -184,19 +198,22 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
                       style={{ top: `${(hour - amplitude.startHour) * 64}px`, height: 64 }}
                     />
                   ))}
-                  {/* Events */}
-                  {positioned.map((pe) => (
-                    <EventBlock
-                      key={pe.event.id}
-                      event={pe.event}
-                      top={getTopPx(pe.event, amplitude)}
-                      height={getHeightPx(pe.event, amplitude)}
-                      left={pe.left}
-                      width={pe.width}
-                      overbooking={pe.overbooking}
-                      onClick={() => setSelectedEvent(pe.event)}
-                    />
-                  ))}
+                  {/* Events positionnés par salle */}
+                  {dayEvents.map((evt) => {
+                    const pos = getSallePosition(evt);
+                    return (
+                      <EventBlock
+                        key={evt.id}
+                        event={evt}
+                        top={getTopPx(evt, amplitude)}
+                        height={getHeightPx(evt, amplitude)}
+                        left={pos.left}
+                        width={pos.width}
+                        overbooking={false}
+                        onClick={() => setSelectedEvent(evt)}
+                      />
+                    );
+                  })}
                 </div>
               );
             })}
@@ -239,6 +256,10 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
   const overbookingStyle = overbooking ? "ring-2 ring-error/60" : "";
   const cursorStyle = "cursor-pointer hover:opacity-80";
 
+  const salleLabel = event.isDuo
+    ? (event.salles ?? []).map((s) => s === "salle_1" ? "Salle 1" : "Salle 2").join(" + ")
+    : event.salle === "salle_1" ? "Salle 1" : event.salle === "salle_2" ? "Salle 2" : null;
+
   return (
     <div
       className={`${baseClasses} ${style} ${overbookingStyle} ${cursorStyle}`}
@@ -247,14 +268,20 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
     >
       <div className="truncate font-medium flex items-center gap-0.5">
         {verif && <AlertTriangle size={9} className="shrink-0" />}
+        {event.isDuo && <Users size={9} className="shrink-0" />}
         {event.label}
+        {event.isDuo && (
+          <span className="ml-0.5 rounded bg-text-muted/20 px-0.5 text-[8px] font-semibold uppercase">
+            DUO
+          </span>
+        )}
       </div>
       {isBooking && event.clientNom && (
         <div className="truncate opacity-80">{event.clientNom}</div>
       )}
-      {!isBooking && event.salle && (
+      {!isBooking && salleLabel && (
         <div className="mt-0.5 inline-block rounded bg-border/60 px-1 text-[9px]">
-          {event.salle === "salle_1" ? "Salle 1" : "Salle 2"}
+          {salleLabel}
         </div>
       )}
     </div>
@@ -262,76 +289,19 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
 }
 
 // ======================
-// Positioning logic
+// Positioning logic — 2 colonnes fixes (Salle 1 | Salle 2)
 // ======================
 
-interface PositionedEvent {
-  event: CalendarEvent;
-  left: string;
-  width: string;
-  overbooking: boolean;
-}
-
-function positionEvents(events: CalendarEvent[], nbRessources: number): PositionedEvent[] {
-  if (events.length === 0) return [];
-
-  const result: PositionedEvent[] = [];
-
-  // Sort by start then by duration (longer first)
-  const sorted = [...events].sort((a, b) => {
-    const diff = new Date(a.start).getTime() - new Date(b.start).getTime();
-    if (diff !== 0) return diff;
-    const durA = new Date(a.end).getTime() - new Date(a.start).getTime();
-    const durB = new Date(b.end).getTime() - new Date(b.start).getTime();
-    return durB - durA;
-  });
-
-  // For each event, find max simultaneous overlaps DURING its own duration
-  const columns: { event: CalendarEvent; col: number }[] = [];
-
-  for (const evt of sorted) {
-    const evtStart = new Date(evt.start).getTime();
-    const evtEnd = new Date(evt.end).getTime();
-
-    // Find overlapping already-placed events
-    const overlapping = columns.filter((placed) => {
-      const pStart = new Date(placed.event.start).getTime();
-      const pEnd = new Date(placed.event.end).getTime();
-      return pStart < evtEnd && evtStart < pEnd;
-    });
-
-    // Find first free column
-    const usedCols = new Set(overlapping.map((o) => o.col));
-    let col = 0;
-    while (usedCols.has(col)) col++;
-
-    columns.push({ event: evt, col });
+function getSallePosition(event: CalendarEvent): { left: string; width: string } {
+  if (event.isDuo) {
+    return { left: "0%", width: "100%" };
   }
-
-  // Second pass: for each event, compute totalColumns = max overlaps during its duration
-  for (const { event: evt, col } of columns) {
-    const evtStart = new Date(evt.start).getTime();
-    const evtEnd = new Date(evt.end).getTime();
-
-    const overlapping = columns.filter((placed) => {
-      const pStart = new Date(placed.event.start).getTime();
-      const pEnd = new Date(placed.event.end).getTime();
-      return pStart < evtEnd && evtStart < pEnd;
-    });
-
-    const totalColumns = Math.max(...overlapping.map((o) => o.col)) + 1;
-    const overbooking = col >= nbRessources;
-    const widthPct = 100 / totalColumns;
-
-    result.push({
-      event: evt,
-      left: `${col * widthPct}%`,
-      width: `${widthPct}%`,
-      overbooking,
-    });
+  if (event.type === "external") {
+    if (event.salle === "salle_2") return { left: "50%", width: "50%" };
+    return { left: "0%", width: "50%" };
   }
-
-  return result;
+  if (event.slotNumber === 2) return { left: "50%", width: "50%" };
+  return { left: "0%", width: "50%" };
 }
 
 // ======================
