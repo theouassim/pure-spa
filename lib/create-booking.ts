@@ -60,6 +60,9 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     if (allowOverride) {
       slotNumber = await firstFreeSlotNumber(slotStart, slotEnd);
     } else {
+      console.error(
+        `[create-booking] INCOHÉRENCE capacité/affectation : créneau ${startAt}→${endAt} proposé par getAvailableSlots mais aucun slot libre dans assignSlotNumber. Possible divergence entre countOverlaps et slot mapping.`
+      );
       return { success: false, reason: "no_slot" };
     }
   }

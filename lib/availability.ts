@@ -122,13 +122,20 @@ export function findFreeSlotNumber(
   candidateRange: TimeRange,
   existingBookings: Array<TimeRange & { slot_number: number }>,
   nbSalles: number,
-  battementMinutes: number
+  battementMinutes: number,
+  externalBookings: Array<TimeRange & { slot_number: number }> = []
 ): number | null {
   const occupiedSlots = new Set<number>();
 
   for (const booking of existingBookings) {
     if (overlapsWithBattement(candidateRange, booking, battementMinutes)) {
       occupiedSlots.add(booking.slot_number);
+    }
+  }
+
+  for (const ext of externalBookings) {
+    if (rangesOverlap(candidateRange, ext)) {
+      occupiedSlots.add(ext.slot_number);
     }
   }
 
@@ -247,7 +254,7 @@ function countOverlaps(
   }
 
   for (const ext of externals) {
-    if (overlapsWithBattement(candidate, ext, battementMinutes)) {
+    if (rangesOverlap(candidate, ext)) {
       count++;
     }
   }

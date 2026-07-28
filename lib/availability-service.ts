@@ -6,6 +6,7 @@ import {
   type AvailableSlot,
 } from "./availability";
 import type { AdminSettings, Service } from "./types";
+import { getSlotForCalendarSource, getAllMappedSlots } from "./salle-mapping";
 
 /**
  * Récupère les créneaux disponibles pour un service donné à une date donnée.
@@ -63,12 +64,35 @@ export async function assignSlotNumber(
   const queryStart = new Date(startAt.getTime() - marginMs);
   const queryEnd = new Date(endAt.getTime() + marginMs);
 
-  const { data: bookings } = await supabaseAdmin
-    .from("bookings")
-    .select("start_at, end_at, slot_number")
-    .in("statut", ["pending", "confirmed"])
-    .lt("start_at", queryEnd.toISOString())
-    .gt("end_at", queryStart.toISOString());
+  const [{ data: bookings }, { data: externals }] = await Promise.all([
+    supabaseAdmin
+      .from("bookings")
+      .select("start_at, end_at, slot_number")
+      .in("statut", ["pending", "confirmed"])
+      .lt("start_at", queryEnd.toISOString())
+      .gt("end_at", queryStart.toISOString()),
+    supabaseAdmin
+      .from("external_bookings")
+      .select("start_at, end_at, calendar_source")
+      .lt("start_at", endAt.toISOString())
+      .gt("end_at", startAt.toISOString()),
+  ]);
+
+  const allMappedSlots = getAllMappedSlots();
+  const externalWithSlots = (externals ?? []).flatMap((e) => {
+    const slot = getSlotForCalendarSource(e.calendar_source);
+    if (slot === null) {
+      console.warn(
+        `[assignSlotNumber] calendar_source inconnu "${e.calendar_source}" — traité comme occupant tous les slots`
+      );
+      return allMappedSlots.map((s) => ({
+        start: new Date(e.start_at),
+        end: new Date(e.end_at),
+        slot_number: s,
+      }));
+    }
+    return [{ start: new Date(e.start_at), end: new Date(e.end_at), slot_number: slot }];
+  });
 
   return findFreeSlotNumber(
     { start: startAt, end: endAt },
@@ -78,7 +102,8 @@ export async function assignSlotNumber(
       slot_number: b.slot_number,
     })),
     settings.nb_salles,
-    settings.battement_minutes
+    settings.battement_minutes,
+    externalWithSlots
   );
 }
 

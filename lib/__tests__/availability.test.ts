@@ -591,3 +591,189 @@ describe("getDayBoundsUTC", () => {
     expect(bounds.end).toEqual(utc("2025-01-15T23:15:00.000Z"));
   });
 });
+
+// ============================================================
+// Tests — findFreeSlotNumber avec externalBookings
+// ============================================================
+
+describe("findFreeSlotNumber — externalBookings (Planity slot mapping)", () => {
+  it("Planity salle_1 occupée → attribue slot 2", () => {
+    const externals = [
+      { ...makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:45:00.000Z"), slot_number: 1 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:30:00.000Z"),
+      [],
+      2,
+      15,
+      externals
+    );
+    expect(slot).toBe(2);
+  });
+
+  it("Planity salle_2 occupée → attribue slot 1", () => {
+    const externals = [
+      { ...makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:45:00.000Z"), slot_number: 2 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:30:00.000Z"),
+      [],
+      2,
+      15,
+      externals
+    );
+    expect(slot).toBe(1);
+  });
+
+  it("DUO Planity (2 salles occupées) → aucun slot libre", () => {
+    const externals = [
+      { ...makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:45:00.000Z"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:45:00.000Z"), slot_number: 2 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T08:30:00.000Z", "2025-01-15T09:30:00.000Z"),
+      [],
+      2,
+      15,
+      externals
+    );
+    expect(slot).toBeNull();
+  });
+
+  it("aucun Planity, aucun interne → slot 1", () => {
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [],
+      2,
+      15,
+      []
+    );
+    expect(slot).toBe(1);
+  });
+
+  it("booking interne slot 1 + Planity salle_2 → aucun slot libre", () => {
+    const internals = [
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
+    ];
+    const externals = [
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:30:00.000Z"), slot_number: 2 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      internals,
+      2,
+      15,
+      externals
+    );
+    expect(slot).toBeNull();
+  });
+
+  it("battement NE s'applique PAS aux externals (durée brute fait foi)", () => {
+    // External 08:00-09:00 slot 1, candidat 09:00-10:00
+    // Avec battement 15min sur l'external, effectiveEnd serait 09:15 → bloquerait slot 1
+    // SANS battement sur l'external, 09:00 >= 09:00 → pas de chevauchement → slot 1 libre
+    const externals = [
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T09:00:00.000Z", "2025-01-15T10:00:00.000Z"),
+      [],
+      2,
+      15,
+      externals
+    );
+    expect(slot).toBe(1);
+  });
+
+  it("battement S'APPLIQUE aux bookings internes (non-régression)", () => {
+    // Internal 08:00-09:00 slot 1, candidat 09:00-10:00, battement 15min
+    // effectiveEnd = 09:15 > 09:00 → slot 1 bloqué
+    const internals = [
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
+    ];
+    const slot = findFreeSlotNumber(
+      makeRange("2025-01-15T09:00:00.000Z", "2025-01-15T10:00:00.000Z"),
+      internals,
+      2,
+      15,
+      []
+    );
+    expect(slot).toBe(2);
+  });
+});
+
+// ============================================================
+// Tests — countOverlaps : battement ne s'applique pas aux externals
+// ============================================================
+
+describe("computeAvailableSlots — battement ne s'applique pas aux externals", () => {
+  const TWO_SALLES_SETTINGS: AdminSettings = {
+    ...BASE_SETTINGS,
+    nb_salles: 2,
+  };
+
+  it("external 08:00-09:00 ne bloque PAS le créneau 09:00 (pas de battement sur Planity)", () => {
+    const external = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: { ...TWO_SALLES_SETTINGS, nb_salles: 1 },
+      existingBookings: [],
+      externalBookings: [external],
+      now: FAR_PAST,
+    });
+
+    // 09:00 UTC = 10:00 Paris, should be available (external ends exactly at 09:00)
+    const at0900utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    expect(at0900utc).toBeDefined();
+  });
+
+  it("internal 08:00-09:00 BLOQUE le créneau 09:00 (battement 15min, non-régression)", () => {
+    const internal = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: { ...TWO_SALLES_SETTINGS, nb_salles: 1 },
+      existingBookings: [internal],
+      externalBookings: [],
+      now: FAR_PAST,
+    });
+
+    // 09:00 UTC blocked because effectiveEnd = 09:15 > 09:00
+    const at0900utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    expect(at0900utc).toBeUndefined();
+  });
+
+  it("Planity 10:30-11:45 (75min) bloque exactement 75min, pas 90", () => {
+    // External 09:00-10:15 Paris = 08:00-09:15 UTC (hiver)
+    // Service 45min, granularité 15min
+    // Sans battement sur external : créneau 09:15 UTC (fin 10:00) ne chevauche pas [08:00, 09:15)
+    //   car candidate.start (09:15) < ext.end (09:15) → false → LIBRE
+    // Avec battement 15min (bug) : effectiveEnd = 09:30 → 09:15 < 09:30 → bloqué
+    const external = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:15:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 45,
+      settings: { ...TWO_SALLES_SETTINGS, nb_salles: 1 },
+      existingBookings: [],
+      externalBookings: [external],
+      now: FAR_PAST,
+    });
+
+    // 09:15 UTC = créneau juste après la fin du Planity → DOIT être libre
+    const at0915utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:15:00.000Z").getTime()
+    );
+    expect(at0915utc).toBeDefined();
+
+    // 09:00 UTC = pendant le Planity → bloqué
+    const at0900utc = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    expect(at0900utc).toBeUndefined();
+  });
+});
