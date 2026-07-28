@@ -134,6 +134,9 @@ export function DiagnosticClient() {
         </HealthCard>
       </div>
 
+      {/* Planity sync & viewer */}
+      <PlanityCard />
+
       {/* Test email */}
       <EmailTestCard />
 
@@ -185,6 +188,150 @@ function HealthCard({
         {status === "warning" && <AlertTriangle size={12} className="text-error" />}
       </div>
       {children}
+    </div>
+  );
+}
+
+interface PlanityBooking {
+  id: string;
+  calendar_source: string;
+  raw_uid: string;
+  start_at: string;
+  end_at: string;
+  synced_at: string;
+}
+
+function PlanityCard() {
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ status: string; results: { source: string; upserted: number; deleted: number; error?: string }[] } | null>(null);
+  const [bookings, setBookings] = useState<PlanityBooking[] | null>(null);
+  const [loadingList, setLoadingList] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setError(null);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/admin/diagnostic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync_planity" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSyncResult(data);
+        handleList();
+      } else {
+        setError(data.error);
+      }
+    } catch {
+      setError("Erreur réseau");
+    }
+    setSyncing(false);
+  }
+
+  async function handleList() {
+    setLoadingList(true);
+    try {
+      const res = await fetch("/api/admin/diagnostic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list_planity" }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setBookings(data.bookings);
+      }
+    } catch {}
+    setLoadingList(false);
+  }
+
+  function formatDateTime(iso: string) {
+    return new Date(iso).toLocaleString("fr-FR", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/Paris",
+    });
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Calendar size={14} className="text-primary" />
+        <h3 className="text-sm font-medium text-text">RDV Planity</h3>
+      </div>
+      <p className="mb-3 text-xs text-text-muted">
+        Force un refetch des iCal Planity et affiche les RDV à venir importés en base.
+      </p>
+
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-1.5 rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+          {syncing ? "Synchro..." : "Forcer la synchro"}
+        </button>
+        <button
+          onClick={handleList}
+          disabled={loadingList}
+          className="flex items-center gap-1.5 rounded-md border border-border px-4 py-1.5 text-sm font-medium text-text-muted hover:bg-accent-light disabled:opacity-50"
+        >
+          {loadingList ? "Chargement..." : "Voir les RDV"}
+        </button>
+      </div>
+
+      {error && <p className="mb-2 text-xs text-error">{error}</p>}
+
+      {syncResult && (
+        <div className="mb-3 rounded-md border border-success/20 bg-success/5 p-3 text-xs">
+          <p className="font-medium text-success">Synchro terminée — statut : {syncResult.status}</p>
+          {syncResult.results.map((r) => (
+            <p key={r.source} className="text-text-muted mt-1">
+              {r.source} : {r.upserted} importés, {r.deleted} supprimés
+              {r.error && <span className="text-error"> — {r.error}</span>}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {bookings && (
+        <div className="max-h-80 overflow-y-auto rounded-md border border-border">
+          <table className="w-full text-xs">
+            <thead className="bg-bg sticky top-0">
+              <tr className="border-b border-border">
+                <th className="px-3 py-2 text-left font-medium text-text-muted">Salle</th>
+                <th className="px-3 py-2 text-left font-medium text-text-muted">Début</th>
+                <th className="px-3 py-2 text-left font-medium text-text-muted">Fin</th>
+                <th className="px-3 py-2 text-left font-medium text-text-muted">Synchro</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bookings.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-3 py-4 text-center text-text-muted">
+                    Aucun RDV Planity à venir
+                  </td>
+                </tr>
+              ) : (
+                bookings.map((b) => (
+                  <tr key={b.id} className="border-b border-border/50">
+                    <td className="px-3 py-2 text-text">{b.calendar_source}</td>
+                    <td className="px-3 py-2 text-text">{formatDateTime(b.start_at)}</td>
+                    <td className="px-3 py-2 text-text">{formatDateTime(b.end_at)}</td>
+                    <td className="px-3 py-2 text-text-muted">{formatRelative(b.synced_at)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

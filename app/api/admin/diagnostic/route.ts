@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { requireOwner } from "@/lib/require-owner";
 import { sendBookingConfirmation } from "@/lib/emails";
+import { syncAllSalles } from "@/lib/planity-sync";
 
 export async function GET() {
   const ownerCheck = await requireOwner();
@@ -90,6 +91,29 @@ export async function POST(request: NextRequest) {
   if (ownerCheck instanceof NextResponse) return ownerCheck;
 
   const { action, email } = await request.json();
+
+  if (action === "sync_planity") {
+    try {
+      const { status, results } = await syncAllSalles();
+      return NextResponse.json({ success: true, status, results });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === "list_planity") {
+    const { data, error } = await supabaseAdmin
+      .from("external_bookings")
+      .select("id, calendar_source, raw_uid, start_at, end_at, synced_at")
+      .gte("start_at", new Date().toISOString())
+      .order("start_at", { ascending: true })
+      .limit(100);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    return NextResponse.json({ success: true, bookings: data });
+  }
 
   if (action === "test_email") {
     if (!email) {
