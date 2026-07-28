@@ -10,6 +10,7 @@ interface SyncResult {
   source: string;
   upserted: number;
   deleted: number;
+  skippedCancelled: number;
   error?: string;
 }
 
@@ -52,44 +53,7 @@ export async function syncAllSalles(): Promise<SyncAllResult> {
     }
   }
 
-  // Dédupliquer : si un même raw_uid existe dans plusieurs salles,
-  // ne garder que la première (salle_1 prioritaire)
-  if (successCount > 0) {
-    await deduplicateCrossSalle();
-  }
-
   return { status, results };
-}
-
-async function deduplicateCrossSalle() {
-  const { data: all } = await supabaseAdmin
-    .from("external_bookings")
-    .select("id, raw_uid, calendar_source")
-    .order("calendar_source", { ascending: true });
-
-  if (!all || all.length === 0) return;
-
-  const seen = new Map<string, string>();
-  const toDelete: string[] = [];
-
-  for (const row of all) {
-    const key = `${row.raw_uid}__${row.calendar_source}`;
-    const dedupKey = row.raw_uid;
-
-    if (seen.has(dedupKey)) {
-      // Doublon — supprimer celui-ci (salle_1 est gardé car order ascending)
-      toDelete.push(row.id);
-    } else {
-      seen.set(dedupKey, key);
-    }
-  }
-
-  if (toDelete.length > 0) {
-    await supabaseAdmin
-      .from("external_bookings")
-      .delete()
-      .in("id", toDelete);
-  }
 }
 
 async function syncOneSalleWithRetry(salle: SalleConfig): Promise<SyncResult> {
@@ -106,7 +70,7 @@ async function syncOneSalleWithRetry(salle: SalleConfig): Promise<SyncResult> {
     }
   }
 
-  return { source: salle.source, upserted: 0, deleted: 0, error: lastError };
+  return { source: salle.source, upserted: 0, deleted: 0, skippedCancelled: 0, error: lastError };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -130,6 +94,7 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
   const horizon = new Date(now.getTime() + SYNC_HORIZON_DAYS * 24 * 3600_000);
 
   const events: { raw_uid: string; start_at: string; end_at: string }[] = [];
+  let skippedCancelled = 0;
 
   for (const [key, component] of Object.entries(parsed)) {
     if (!component || component.type !== "VEVENT") continue;
@@ -138,6 +103,12 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
 
     const uid = event.uid ?? key;
     if (!uid) continue;
+
+    const status = ((event as Record<string, unknown>).status as string | undefined) ?? "";
+    if (status.toUpperCase() === "CANCELLED") {
+      skippedCancelled++;
+      continue;
+    }
 
     const durationMs = new Date(event.end).getTime() - new Date(event.start).getTime();
 
@@ -156,13 +127,19 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     }
   }
 
-  // Suppression complète de la salle puis réinsertion — évite les doublons
-  // si le format des UIDs change entre deux syncs Planity
-  const { data: deletedRows } = await supabaseAdmin
+  if (skippedCancelled > 0) {
+    console.log(`[planity-sync] ${salle.source}: ${skippedCancelled} VEVENT CANCELLED ignorés`);
+  }
+
+  const { data: deletedRows, error: deleteError } = await supabaseAdmin
     .from("external_bookings")
     .delete()
     .eq("calendar_source", salle.source)
     .select("id");
+
+  if (deleteError) {
+    throw new Error(`DELETE échoué pour ${salle.source}: ${deleteError.message}`);
+  }
 
   const deleted = deletedRows?.length ?? 0;
 
@@ -191,5 +168,5 @@ async function syncOneSalle(salle: SalleConfig): Promise<SyncResult> {
     }
   }
 
-  return { source: salle.source, upserted, deleted };
+  return { source: salle.source, upserted, deleted, skippedCancelled };
 }
