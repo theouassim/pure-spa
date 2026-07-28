@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { ChevronLeft, ChevronRight, Calendar, Filter, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Filter, AlertTriangle, RefreshCw } from "lucide-react";
 import { toZonedTime } from "date-fns-tz";
 import type { CalendarEvent } from "@/app/api/admin/events/route";
 import { EventDetailModal } from "./event-detail-modal";
@@ -22,6 +22,7 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [salleFilter, setSalleFilter] = useState<SalleFilter>("all");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
@@ -43,6 +44,19 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
+
+  async function handleSyncPlanity() {
+    setSyncing(true);
+    try {
+      await fetch("/api/admin/diagnostic", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync_planity" }),
+      });
+      await fetchEvents();
+    } catch {}
+    setSyncing(false);
+  }
 
   const filteredEvents = events.filter((e) => {
     if (sourceFilter === "booking" && e.type !== "booking") return false;
@@ -89,6 +103,14 @@ export function CalendarGrid({ joursOuverts, horaires, nbRessources }: CalendarG
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncPlanity}
+            disabled={syncing}
+            className="flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-text-muted hover:bg-accent-light disabled:opacity-50"
+          >
+            <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Synchro..." : "Synchro Planity"}
+          </button>
           <Filter size={14} className="text-text-muted" />
           <select
             value={sourceFilter}
