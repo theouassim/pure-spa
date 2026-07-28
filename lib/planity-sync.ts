@@ -52,7 +52,44 @@ export async function syncAllSalles(): Promise<SyncAllResult> {
     }
   }
 
+  // Dédupliquer : si un même raw_uid existe dans plusieurs salles,
+  // ne garder que la première (salle_1 prioritaire)
+  if (successCount > 0) {
+    await deduplicateCrossSalle();
+  }
+
   return { status, results };
+}
+
+async function deduplicateCrossSalle() {
+  const { data: all } = await supabaseAdmin
+    .from("external_bookings")
+    .select("id, raw_uid, calendar_source")
+    .order("calendar_source", { ascending: true });
+
+  if (!all || all.length === 0) return;
+
+  const seen = new Map<string, string>();
+  const toDelete: string[] = [];
+
+  for (const row of all) {
+    const key = `${row.raw_uid}__${row.calendar_source}`;
+    const dedupKey = row.raw_uid;
+
+    if (seen.has(dedupKey)) {
+      // Doublon — supprimer celui-ci (salle_1 est gardé car order ascending)
+      toDelete.push(row.id);
+    } else {
+      seen.set(dedupKey, key);
+    }
+  }
+
+  if (toDelete.length > 0) {
+    await supabaseAdmin
+      .from("external_bookings")
+      .delete()
+      .in("id", toDelete);
+  }
 }
 
 async function syncOneSalleWithRetry(salle: SalleConfig): Promise<SyncResult> {
