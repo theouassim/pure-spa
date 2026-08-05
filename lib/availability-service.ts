@@ -70,12 +70,11 @@ export async function assignSlotNumbers(
   const queryStart = new Date(startAt.getTime() - marginMs);
   const queryEnd = new Date(endAt.getTime() + marginMs);
 
-  const [{ data: bookingSlots }, { data: externals }] = await Promise.all([
+  const [{ data: bookingSlots, error: slotsError }, { data: externals }] = await Promise.all([
     supabaseAdmin
       .from("booking_slots")
-      .select("slot_number, booking:bookings!inner(start_at, end_at, statut)")
-      .eq("actif", true)
-      .in("booking.statut", ["pending", "confirmed"]),
+      .select("slot_number, booking:bookings(start_at, end_at, statut)")
+      .eq("actif", true),
     supabaseAdmin
       .from("external_bookings")
       .select("start_at, end_at, calendar_source")
@@ -83,10 +82,15 @@ export async function assignSlotNumbers(
       .gt("end_at", startAt.toISOString()),
   ]);
 
-  // Filtrer côté applicatif sur la fenêtre temporelle (avec marge battement)
+  if (slotsError) {
+    console.error("[assignSlotNumbers] Error fetching booking_slots:", slotsError);
+  }
+
+  // Filtrer côté applicatif : actif + statut non-cancelled + fenêtre temporelle
   const relevantSlots = (bookingSlots ?? [])
     .filter((s) => {
-      const b = s.booking as unknown as { start_at: string; end_at: string };
+      const b = s.booking as unknown as { start_at: string; end_at: string; statut: string } | null;
+      if (!b || b.statut === "cancelled") return false;
       return b.start_at < queryEnd.toISOString() && b.end_at > queryStart.toISOString();
     })
     .map((s) => {

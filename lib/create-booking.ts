@@ -121,9 +121,8 @@ async function firstFreeSlotNumbers(
   const [{ data: overlappingSlots }, { data: externals }] = await Promise.all([
     supabaseAdmin
       .from("booking_slots")
-      .select("slot_number, booking:bookings!inner(start_at, end_at, statut)")
-      .eq("actif", true)
-      .in("booking.statut", ["pending", "confirmed"]),
+      .select("slot_number, booking:bookings(start_at, end_at, statut)")
+      .eq("actif", true),
     supabaseAdmin
       .from("external_bookings")
       .select("start_at, end_at, calendar_source")
@@ -133,9 +132,10 @@ async function firstFreeSlotNumbers(
 
   const usedSlots = new Set<number>();
 
-  // Slots internes qui chevauchent
+  // Slots internes qui chevauchent (filtre statut + fenêtre côté applicatif)
   for (const s of overlappingSlots ?? []) {
-    const b = s.booking as unknown as { start_at: string; end_at: string };
+    const b = s.booking as unknown as { start_at: string; end_at: string; statut: string } | null;
+    if (!b || b.statut === "cancelled") continue;
     if (b.start_at < slotEnd.toISOString() && b.end_at > slotStart.toISOString()) {
       usedSlots.add(s.slot_number);
     }
