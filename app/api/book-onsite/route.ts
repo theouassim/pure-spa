@@ -52,13 +52,14 @@ export async function POST(request: NextRequest) {
   });
 
   if (!result.success) {
+    console.error("[book-onsite] createBooking failed:", result.reason);
     if (result.reason === "slot_expired") {
       return NextResponse.json(
         { error: "slot_expired", message: "Ce créneau n'est plus disponible." },
         { status: 409 }
       );
     }
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
+    return NextResponse.json({ error: "Erreur serveur", reason: result.reason }, { status: 500 });
   }
 
   const { data: service } = await supabaseAdmin

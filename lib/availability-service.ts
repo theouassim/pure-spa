@@ -83,7 +83,7 @@ export async function assignSlotNumbers(
   ]);
 
   if (slotsError) {
-    console.error("[assignSlotNumbers] Error fetching booking_slots:", slotsError);
+    console.error("[assignSlotNumbers] Error fetching booking_slots:", JSON.stringify(slotsError));
   }
 
   // Filtrer côté applicatif : actif + statut non-cancelled + fenêtre temporelle

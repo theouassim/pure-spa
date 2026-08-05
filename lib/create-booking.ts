@@ -86,7 +86,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     if (error.code === "PS001" || error.code === "23P01" || error.message?.includes("Slot occupé")) {
       return { success: false, reason: "slot_expired" };
     }
-    console.error("[create-booking] RPC error:", error);
+    console.error("[create-booking] RPC error:", JSON.stringify(error));
     return { success: false, reason: "db_error" };
   }
 
