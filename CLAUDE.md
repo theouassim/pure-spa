@@ -119,6 +119,7 @@ Avancer **phase par phase**, commit + PR à chaque phase validée. Ne pas tout g
 - **Ne pas mettre de données client/perso dans des paramètres d'URL.**
 - Le compte Stripe appartient au **client**, jamais à l'agence.
 - Tester la logique anti-conflit et Planity **tôt**, pas en fin de projet.
+- **Toute migration touchant `booking_slots`, les triggers associés, ou l'anti-double-réservation passe OBLIGATOIREMENT par la base dev avant la prod.** Sans exception.
 
 ---
 
