@@ -39,6 +39,7 @@ export interface AvailabilityInput {
   granularityMinutes?: number;
   skipDelayCheck?: boolean;
   serviceBattementMinutes?: number | null;
+  sallesRequises?: number;
 }
 
 export interface AvailableSlot {
@@ -61,6 +62,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
     granularityMinutes = 15,
     skipDelayCheck = false,
     serviceBattementMinutes,
+    sallesRequises = 1,
   } = input;
 
   const resolvedBattement = serviceBattementMinutes ?? settings.battement_minutes;
@@ -99,7 +101,7 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
       resolvedBattement
     );
 
-    if (occupationCount >= settings.nb_salles) {
+    if (occupationCount + sallesRequises > settings.nb_salles) {
       continue;
     }
 
@@ -110,21 +112,22 @@ export function computeAvailableSlots(input: AvailabilityInput): AvailableSlot[]
 }
 
 /**
- * Trouve le premier slot_number libre (greedy first-fit) pour une plage donnée.
+ * Trouve les N plus petits slot_numbers libres (greedy first-fit) pour une plage donnée.
  * Utilisée au moment de créer un booking — PAS pour déterminer la disponibilité.
  *
- * HEURISTIQUE : le plus petit slot libre peut ne pas être optimal avec des durées
+ * HEURISTIQUE : les plus petits slots libres peuvent ne pas être optimaux avec des durées
  * variables (fragmentation possible). Pour 2-4 praticiennes, le risque est négligeable.
  *
- * @returns slot_number (1-based) ou null si aucun slot libre
+ * @returns tableau de slot_numbers (1-based) ou null si pas assez de slots libres
  */
-export function findFreeSlotNumber(
+export function findFreeSlotNumbers(
   candidateRange: TimeRange,
   existingBookings: Array<TimeRange & { slot_number: number }>,
   nbSalles: number,
   battementMinutes: number,
-  externalBookings: Array<TimeRange & { slot_number: number }> = []
-): number | null {
+  externalBookings: Array<TimeRange & { slot_number: number }> = [],
+  sallesRequises: number = 1
+): number[] | null {
   const occupiedSlots = new Set<number>();
 
   for (const booking of existingBookings) {
@@ -139,13 +142,33 @@ export function findFreeSlotNumber(
     }
   }
 
+  const freeSlots: number[] = [];
   for (let slot = 1; slot <= nbSalles; slot++) {
     if (!occupiedSlots.has(slot)) {
-      return slot;
+      freeSlots.push(slot);
+      if (freeSlots.length === sallesRequises) {
+        return freeSlots;
+      }
     }
   }
 
   return null;
+}
+
+/**
+ * Rétrocompat : retourne un seul slot libre (pour les cas solo).
+ */
+export function findFreeSlotNumber(
+  candidateRange: TimeRange,
+  existingBookings: Array<TimeRange & { slot_number: number }>,
+  nbSalles: number,
+  battementMinutes: number,
+  externalBookings: Array<TimeRange & { slot_number: number }> = []
+): number | null {
+  const result = findFreeSlotNumbers(
+    candidateRange, existingBookings, nbSalles, battementMinutes, externalBookings, 1
+  );
+  return result ? result[0] : null;
 }
 
 /**

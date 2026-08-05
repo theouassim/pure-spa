@@ -22,6 +22,7 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
   const [description, setDescription] = useState(service?.description ?? "");
   const [reservableEnLigne, setReservableEnLigne] = useState(service?.reservable_en_ligne ?? true);
   const [battementMin, setBattementMin] = useState(service?.battement_min != null ? String(service.battement_min) : "");
+  const [sallesRequises, setSallesRequises] = useState(String(service?.salles_requises ?? 1));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +38,9 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
 
     const finalCategorie = newCategorie.trim() || categorie;
 
+    const nbSalles = parseInt(sallesRequises, 10) || 1;
+    if (nbSalles < 1) { setError("Nombre de salles requises invalide."); return; }
+
     setSubmitting(true);
 
     const payload: Record<string, unknown> = {
@@ -47,6 +51,7 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
       description: description.trim() || null,
       reservable_en_ligne: reservableEnLigne,
       battement_min: battementMin.trim() === "" ? null : parseInt(battementMin, 10),
+      salles_requises: nbSalles,
     };
 
     const url = isEdit ? `/api/admin/services/${service.id}` : "/api/admin/services";
@@ -179,6 +184,22 @@ export function ServiceFormModal({ service, categories, onClose, onSaved }: Prop
               onChange={(e) => setBattementMin(e.target.value)}
               placeholder="Battement global par défaut"
               className="w-full rounded-md border border-border px-3 py-2 text-sm placeholder:text-text-muted/50"
+            />
+          </div>
+
+          {/* Salles requises */}
+          <div>
+            <label className="mb-1 flex items-center gap-1 text-xs font-medium text-text-muted">
+              Salles requises
+              <InfoTooltip text="Nombre de salles occupées simultanément. 2 = prestation DUO (occupe les 2 salles)." />
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={2}
+              value={sallesRequises}
+              onChange={(e) => setSallesRequises(e.target.value)}
+              className="w-full rounded-md border border-border px-3 py-2 text-sm"
             />
           </div>
 

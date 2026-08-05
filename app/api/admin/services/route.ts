@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabaseAdmin
     .from("services")
-    .select("id, nom, categorie, duree_minutes, prix, description, actif, reservable_en_ligne, battement_min, created_at")
+    .select("id, nom, categorie, duree_minutes, prix, description, actif, reservable_en_ligne, battement_min, salles_requises, created_at")
     .order("categorie")
     .order("nom");
 
@@ -48,6 +48,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Battement invalide." }, { status: 400 });
     }
     insertData.battement_min = val;
+  }
+
+  if (body.salles_requises !== undefined) {
+    const val = Number(body.salles_requises);
+    if (!Number.isInteger(val) || val < 1) {
+      return NextResponse.json({ error: "Nombre de salles requises invalide." }, { status: 400 });
+    }
+    insertData.salles_requises = val;
   }
 
   const { data, error } = await supabaseAdmin

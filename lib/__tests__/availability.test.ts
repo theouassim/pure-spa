@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeAvailableSlots,
   findFreeSlotNumber,
+  findFreeSlotNumbers,
   getDayBoundsUTC,
   type TimeRange,
 } from "../availability";
@@ -775,5 +776,200 @@ describe("computeAvailableSlots — battement ne s'applique pas aux externals", 
       (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
     );
     expect(at0900utc).toBeUndefined();
+  });
+});
+
+// ============================================================
+// Tests — Prestations DUO (sallesRequises = 2)
+// ============================================================
+
+describe("computeAvailableSlots — DUO (sallesRequises = 2)", () => {
+  const DUO_SETTINGS: AdminSettings = {
+    ...BASE_SETTINGS,
+    nb_salles: 2,
+  };
+
+  it("1. DUO réservable quand les 2 salles sont libres", () => {
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [],
+      externalBookings: [],
+      now: FAR_PAST,
+      sallesRequises: 2,
+    });
+    expect(slots.length).toBeGreaterThan(0);
+  });
+
+  it("2. DUO refusé quand 1 seule salle libre (1 booking interne)", () => {
+    const booking = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [booking],
+      externalBookings: [],
+      now: FAR_PAST,
+      sallesRequises: 2,
+    });
+    // Le créneau 08:00 UTC doit être absent (1 salle occupée, besoin de 2)
+    const at0800 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(at0800).toBeUndefined();
+  });
+
+  it("3. DUO refusé quand Planity occupe 1 salle", () => {
+    const external = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [],
+      externalBookings: [external],
+      now: FAR_PAST,
+      sallesRequises: 2,
+    });
+    const at0800 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(at0800).toBeUndefined();
+  });
+
+  it("4. Solo refusé sur un créneau déjà pris par un DUO (2 bookings internes)", () => {
+    // Simule un DUO = 2 bookings occupant le même créneau
+    const booking1 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const booking2 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [booking1, booking2],
+      externalBookings: [],
+      now: FAR_PAST,
+      sallesRequises: 1,
+    });
+    const at0800 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(at0800).toBeUndefined();
+  });
+
+  it("5. Deux DUO chevauchants : le second refusé (toutes salles occupées)", () => {
+    // Premier DUO occupe les 2 salles
+    const booking1 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const booking2 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [booking1, booking2],
+      externalBookings: [],
+      now: FAR_PAST,
+      sallesRequises: 2,
+    });
+    const at0800 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T08:00:00.000Z").getTime()
+    );
+    expect(at0800).toBeUndefined();
+  });
+
+  it("7. Battement respecté des deux côtés d'un DUO (et absent sur externals)", () => {
+    // Un DUO finit à 09:00 → avec battement 15min, créneau solo 09:00 bloqué
+    const duoSlot1 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const duoSlot2 = makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z");
+    const slots = computeAvailableSlots({
+      date: WINTER_DATE,
+      serviceDurationMinutes: 60,
+      settings: DUO_SETTINGS,
+      existingBookings: [duoSlot1, duoSlot2],
+      externalBookings: [],
+      now: FAR_PAST,
+      sallesRequises: 1,
+      serviceBattementMinutes: 15,
+    });
+    // 09:00 bloqué par battement (effective end = 09:15 pour les 2 internes)
+    const at0900 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:00:00.000Z").getTime()
+    );
+    expect(at0900).toBeUndefined();
+
+    // 09:15 devrait être libre
+    const at0915 = slots.find(
+      (s) => s.start.getTime() === utc("2025-01-15T09:15:00.000Z").getTime()
+    );
+    expect(at0915).toBeDefined();
+  });
+});
+
+describe("findFreeSlotNumbers — DUO", () => {
+  it("1. retourne 2 slots quand les 2 sont libres", () => {
+    const result = findFreeSlotNumbers(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [],
+      2,
+      15,
+      [],
+      2
+    );
+    expect(result).toEqual([1, 2]);
+  });
+
+  it("2. retourne null quand seulement 1 slot libre et besoin de 2", () => {
+    const result = findFreeSlotNumbers(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [{ ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 }],
+      2,
+      15,
+      [],
+      2
+    );
+    expect(result).toBeNull();
+  });
+
+  it("3. retourne null quand Planity occupe 1 salle et DUO a besoin de 2", () => {
+    const result = findFreeSlotNumbers(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [],
+      2,
+      15,
+      [{ ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 2 }],
+      2
+    );
+    expect(result).toBeNull();
+  });
+
+  it("6. Annulation d'un DUO : les 2 slots libérés (simule en ne passant plus les bookings)", () => {
+    // Avant annulation : 2 slots occupés → null pour DUO
+    const bookings = [
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 },
+      { ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 2 },
+    ];
+    const beforeCancel = findFreeSlotNumbers(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      bookings,
+      2, 15, [], 2
+    );
+    expect(beforeCancel).toBeNull();
+
+    // Après annulation (bookings retirés) : les 2 slots sont libres
+    const afterCancel = findFreeSlotNumbers(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [],
+      2, 15, [], 2
+    );
+    expect(afterCancel).toEqual([1, 2]);
+  });
+
+  it("findFreeSlotNumber rétrocompat : retourne un seul nombre", () => {
+    const result = findFreeSlotNumber(
+      makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"),
+      [{ ...makeRange("2025-01-15T08:00:00.000Z", "2025-01-15T09:00:00.000Z"), slot_number: 1 }],
+      2,
+      15,
+      []
+    );
+    expect(result).toBe(2);
   });
 });

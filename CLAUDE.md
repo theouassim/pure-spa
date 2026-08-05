@@ -76,8 +76,22 @@ Plateforme de réservation sur-mesure pour un institut de spa.
 - Mapping `calendar_source → slot_number` défini dans `lib/salle-mapping.ts` (source unique de vérité) :
   - `salle_1` → 1
   - `salle_2` → 2
-- `assignSlotNumber` tient compte des `external_bookings` pour ne jamais attribuer un slot occupé par Planity.
+- `assignSlotNumbers` tient compte des `external_bookings` pour ne jamais attribuer un slot occupé par Planity.
 - Un `calendar_source` inconnu est traité comme occupant **tous** les slots (fail-safe).
+
+### Prestations DUO et booking_slots
+- `services.salles_requises` : nombre de salles occupées simultanément (1 = solo, 2 = DUO). Distinct de `admin_settings.nb_salles` (capacité totale de l'institut).
+- **`booking_slots`** = source de vérité de l'occupation physique. Chaque booking y a N lignes (1 par salle occupée). Colonne `actif` = soft-disable (pas de DELETE).
+- `bookings.slot_number` = salle principale (MIN des slot_numbers), conservée pour affichage et second filet de sécurité.
+- **Deux contraintes EXCLUDE coexistent** :
+  - `booking_slots_no_overlap` (sur `booking_slots`) : empêche toute collision entre slots actifs. C'est la source de vérité.
+  - `bookings_no_overlap` (sur `bookings`) : défense en profondeur sur le slot principal. Ne produit aucun faux positif.
+- `booking_slots.periode` = `tstzrange(start_at, end_at, '[)')` **brute, sans battement**. Le battement reste appliqué uniquement au moment du calcul de disponibilité par `overlapsWithBattement`.
+- **Triggers** sur `bookings` :
+  - Changement de statut → `actif = false` (annulation) ou `actif = true` (réactivation, échoue si créneau repris).
+  - Changement de `start_at`/`end_at` → mise à jour de `periode` (échoue si nouveau créneau occupé).
+- **Toute création de booking passe OBLIGATOIREMENT par la RPC `create_booking_with_slots`**, jamais par un INSERT direct. Garantit l'atomicité booking + slots.
+- Limitation connue : déplacer un DUO sur un créneau où une seule salle est libre → rejet (les slot_number ne changent pas, seule la periode est mise à jour).
 
 ---
 

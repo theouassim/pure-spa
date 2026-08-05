@@ -15,6 +15,7 @@ export interface ServiceRow {
   actif: boolean;
   reservable_en_ligne: boolean;
   battement_min: number | null;
+  salles_requises: number;
   created_at: string;
 }
 

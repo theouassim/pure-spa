@@ -48,6 +48,13 @@ export async function PATCH(
     }
     updates.battement_min = val;
   }
+  if (body.salles_requises !== undefined) {
+    const val = Number(body.salles_requises);
+    if (!Number.isInteger(val) || val < 1) {
+      return NextResponse.json({ error: "Nombre de salles requises invalide." }, { status: 400 });
+    }
+    updates.salles_requises = val;
+  }
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Aucune modification." }, { status: 400 });

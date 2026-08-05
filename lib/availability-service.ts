@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabase-admin";
 import {
   computeAvailableSlots,
-  findFreeSlotNumber,
+  findFreeSlotNumbers,
   getDayBoundsUTC,
   type AvailableSlot,
 } from "./availability";
@@ -46,17 +46,23 @@ export async function getAvailableSlots(
     now: new Date(),
     skipDelayCheck: options?.skipDelayCheck,
     serviceBattementMinutes: service.battement_min,
+    sallesRequises: service.salles_requises,
   });
 }
 
 /**
- * Attribue un slot_number pour un nouveau booking.
- * Retourne null si aucun slot libre (créneau plein).
+ * Attribue N slot_numbers pour un nouveau booking.
+ * Retourne null si pas assez de slots libres (créneau plein).
+ *
+ * Lit booking_slots (actif=true) pour déterminer les slots occupés.
+ * Le filtre statut via join est redondant (le trigger garantit actif=false sur cancelled)
+ * mais conservé en ceinture-bretelles.
  */
-export async function assignSlotNumber(
+export async function assignSlotNumbers(
   startAt: Date,
-  endAt: Date
-): Promise<number | null> {
+  endAt: Date,
+  sallesRequises: number = 1
+): Promise<number[] | null> {
   const settings = await fetchSettings();
   if (!settings) return null;
 
@@ -64,13 +70,12 @@ export async function assignSlotNumber(
   const queryStart = new Date(startAt.getTime() - marginMs);
   const queryEnd = new Date(endAt.getTime() + marginMs);
 
-  const [{ data: bookings }, { data: externals }] = await Promise.all([
+  const [{ data: bookingSlots }, { data: externals }] = await Promise.all([
     supabaseAdmin
-      .from("bookings")
-      .select("start_at, end_at, slot_number")
-      .in("statut", ["pending", "confirmed"])
-      .lt("start_at", queryEnd.toISOString())
-      .gt("end_at", queryStart.toISOString()),
+      .from("booking_slots")
+      .select("slot_number, booking:bookings!inner(start_at, end_at, statut)")
+      .eq("actif", true)
+      .in("booking.statut", ["pending", "confirmed"]),
     supabaseAdmin
       .from("external_bookings")
       .select("start_at, end_at, calendar_source")
@@ -78,12 +83,27 @@ export async function assignSlotNumber(
       .gt("end_at", startAt.toISOString()),
   ]);
 
+  // Filtrer côté applicatif sur la fenêtre temporelle (avec marge battement)
+  const relevantSlots = (bookingSlots ?? [])
+    .filter((s) => {
+      const b = s.booking as unknown as { start_at: string; end_at: string };
+      return b.start_at < queryEnd.toISOString() && b.end_at > queryStart.toISOString();
+    })
+    .map((s) => {
+      const b = s.booking as unknown as { start_at: string; end_at: string };
+      return {
+        start: new Date(b.start_at),
+        end: new Date(b.end_at),
+        slot_number: s.slot_number,
+      };
+    });
+
   const allMappedSlots = getAllMappedSlots();
   const externalWithSlots = (externals ?? []).flatMap((e) => {
     const slot = getSlotForCalendarSource(e.calendar_source);
     if (slot === null) {
       console.warn(
-        `[assignSlotNumber] calendar_source inconnu "${e.calendar_source}" — traité comme occupant tous les slots`
+        `[assignSlotNumbers] calendar_source inconnu "${e.calendar_source}" — traité comme occupant tous les slots`
       );
       return allMappedSlots.map((s) => ({
         start: new Date(e.start_at),
@@ -94,16 +114,13 @@ export async function assignSlotNumber(
     return [{ start: new Date(e.start_at), end: new Date(e.end_at), slot_number: slot }];
   });
 
-  return findFreeSlotNumber(
+  return findFreeSlotNumbers(
     { start: startAt, end: endAt },
-    (bookings ?? []).map((b) => ({
-      start: new Date(b.start_at),
-      end: new Date(b.end_at),
-      slot_number: b.slot_number,
-    })),
+    relevantSlots,
     settings.nb_salles,
     settings.battement_minutes,
-    externalWithSlots
+    externalWithSlots,
+    sallesRequises
   );
 }
 

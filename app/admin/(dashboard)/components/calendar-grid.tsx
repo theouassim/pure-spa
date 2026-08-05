@@ -279,7 +279,7 @@ function EventBlock({ event, top, height, left, width, overbooking, onClick }: E
       {isBooking && event.clientNom && (
         <div className="truncate opacity-80">{event.clientNom}</div>
       )}
-      {!isBooking && salleLabel && (
+      {salleLabel && (
         <div className="mt-0.5 inline-block rounded bg-border/60 px-1 text-[9px]">
           {salleLabel}
         </div>

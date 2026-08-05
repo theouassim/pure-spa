@@ -1,8 +1,9 @@
 import { supabaseAdmin } from "./supabase-admin";
-import { getAvailableSlots, assignSlotNumber } from "./availability-service";
+import { getAvailableSlots, assignSlotNumbers } from "./availability-service";
 import { syncAllSalles } from "./planity-sync";
 import { sendVerificationAlert } from "./emails";
 import type { StatutPaiement } from "./types";
+import { getSlotForCalendarSource, getAllMappedSlots } from "./salle-mapping";
 
 export interface CreateBookingInput {
   serviceId: string;
@@ -26,7 +27,7 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
 
   const { data: service } = await supabaseAdmin
     .from("services")
-    .select("prix")
+    .select("prix, salles_requises")
     .eq("id", serviceId)
     .single();
 
@@ -34,17 +35,16 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     return { success: false, reason: "service_not_found" };
   }
 
+  const sallesRequises: number = service.salles_requises ?? 1;
   let verificationRequise = false;
 
   if (!allowOverride) {
     const { status } = await syncAllSalles();
 
     if (status === "failed") {
-      // Planity totalement injoignable — on continue mais on flag le booking
       verificationRequise = true;
     }
 
-    // Vérification de disponibilité (avec les données fraîches ou cron selon le status)
     const availableSlots = await getAvailableSlots(serviceId, slotStart, { skipDelayCheck: true });
     const stillAvailable = availableSlots.some(
       (s) => s.start.getTime() === slotStart.getTime()
@@ -55,49 +55,47 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     }
   }
 
-  let slotNumber = await assignSlotNumber(slotStart, slotEnd);
-  if (slotNumber === null) {
+  let slotNumbers = await assignSlotNumbers(slotStart, slotEnd, sallesRequises);
+  if (slotNumbers === null) {
     if (allowOverride) {
-      slotNumber = await firstFreeSlotNumber(slotStart, slotEnd);
+      slotNumbers = await firstFreeSlotNumbers(slotStart, slotEnd, sallesRequises);
     } else {
       console.error(
-        `[create-booking] INCOHÉRENCE capacité/affectation : créneau ${startAt}→${endAt} proposé par getAvailableSlots mais aucun slot libre dans assignSlotNumber. Possible divergence entre countOverlaps et slot mapping.`
+        `[create-booking] INCOHÉRENCE capacité/affectation : créneau ${startAt}→${endAt} proposé par getAvailableSlots mais aucun slot libre dans assignSlotNumbers. Possible divergence entre countOverlaps et slot mapping.`
       );
       return { success: false, reason: "no_slot" };
     }
   }
 
-  const insertData: Record<string, unknown> = {
-    service_id: serviceId,
-    client_id: clientId,
-    start_at: startAt,
-    end_at: endAt,
-    slot_number: slotNumber,
-    statut: "confirmed",
-    montant: service.prix,
-    statut_paiement: statutPaiement,
-    stripe_payment_id: stripePaymentId,
-  };
+  const { data, error } = await supabaseAdmin.rpc("create_booking_with_slots", {
+    p_service_id: serviceId,
+    p_client_id: clientId,
+    p_start_at: startAt,
+    p_end_at: endAt,
+    p_slot_numbers: slotNumbers,
+    p_statut: "confirmed",
+    p_montant: service.prix,
+    p_statut_paiement: statutPaiement,
+    p_stripe_payment_id: stripePaymentId,
+    p_verification_requise: verificationRequise,
+  });
 
-  if (verificationRequise) {
-    insertData.verification_requise = true;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await supabaseAdmin
-    .from("bookings")
-    .insert(insertData as any)
-    .select("id")
-    .single();
-
-  if (error || !data) {
+  if (error) {
+    // PS001 = booking_slots_no_overlap violation (via RAISE dans la RPC)
+    // 23P01 = exclusion_violation brute (bookings_no_overlap ou booking_slots)
+    if (error.code === "PS001" || error.code === "23P01" || error.message?.includes("Slot occupé")) {
+      return { success: false, reason: "slot_expired" };
+    }
+    console.error("[create-booking] RPC error:", error);
     return { success: false, reason: "db_error" };
   }
+
+  const bookingId = data as string;
 
   if (verificationRequise) {
     try {
       await sendVerificationAlert({
-        bookingId: data.id,
+        bookingId,
         serviceId,
         startAt,
         endAt,
@@ -108,20 +106,59 @@ export async function createBooking(input: CreateBookingInput): Promise<CreateBo
     }
   }
 
-  return { success: true, bookingId: data.id, verificationRequise };
+  return { success: true, bookingId, verificationRequise };
 }
 
-async function firstFreeSlotNumber(slotStart: Date, slotEnd: Date): Promise<number> {
-  const { data: overlapping } = await supabaseAdmin
-    .from("bookings")
-    .select("slot_number")
-    .neq("statut", "cancelled")
-    .lt("start_at", slotEnd.toISOString())
-    .gt("end_at", slotStart.toISOString());
+/**
+ * Fallback pour l'override admin : trouve N slots libres sans limite nb_salles.
+ * Lit bookings ET external_bookings pour ne pas attribuer une salle occupée par Planity.
+ */
+async function firstFreeSlotNumbers(
+  slotStart: Date,
+  slotEnd: Date,
+  sallesRequises: number
+): Promise<number[]> {
+  const [{ data: overlappingSlots }, { data: externals }] = await Promise.all([
+    supabaseAdmin
+      .from("booking_slots")
+      .select("slot_number, booking:bookings!inner(start_at, end_at, statut)")
+      .eq("actif", true)
+      .in("booking.statut", ["pending", "confirmed"]),
+    supabaseAdmin
+      .from("external_bookings")
+      .select("start_at, end_at, calendar_source")
+      .lt("start_at", slotEnd.toISOString())
+      .gt("end_at", slotStart.toISOString()),
+  ]);
 
-  const usedSlots = new Set((overlapping ?? []).map((b) => b.slot_number));
+  const usedSlots = new Set<number>();
 
+  // Slots internes qui chevauchent
+  for (const s of overlappingSlots ?? []) {
+    const b = s.booking as unknown as { start_at: string; end_at: string };
+    if (b.start_at < slotEnd.toISOString() && b.end_at > slotStart.toISOString()) {
+      usedSlots.add(s.slot_number);
+    }
+  }
+
+  // Slots externes qui chevauchent
+  const allMappedSlots = getAllMappedSlots();
+  for (const e of externals ?? []) {
+    const slot = getSlotForCalendarSource(e.calendar_source);
+    if (slot === null) {
+      allMappedSlots.forEach((s) => usedSlots.add(s));
+    } else {
+      usedSlots.add(slot);
+    }
+  }
+
+  const freeSlots: number[] = [];
   let slot = 1;
-  while (usedSlots.has(slot)) slot++;
-  return slot;
+  while (freeSlots.length < sallesRequises) {
+    if (!usedSlots.has(slot)) {
+      freeSlots.push(slot);
+    }
+    slot++;
+  }
+  return freeSlots;
 }

@@ -11,6 +11,7 @@ export interface CalendarEvent {
   icalUid?: string;
   isDuo?: boolean;
   salles?: string[];
+  slotNumbers?: number[];
   serviceNom?: string;
   serviceDuree?: number;
   clientNom?: string;
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Paramètres from/to requis" }, { status: 400 });
   }
 
-  const [bookingsResult, externalsResult] = await Promise.all([
+  const [bookingsResult, bookingSlotsResult, externalsResult] = await Promise.all([
     supabaseAdmin
       .from("bookings")
       .select("id, start_at, end_at, statut, montant, statut_paiement, stripe_payment_id, slot_number, service:services(nom, duree_minutes), client:clients(nom, email, telephone)")
@@ -41,17 +42,30 @@ export async function GET(request: NextRequest) {
       .gte("start_at", from)
       .lte("start_at", to),
     supabaseAdmin
+      .from("booking_slots")
+      .select("booking_id, slot_number")
+      .eq("actif", true),
+    supabaseAdmin
       .from("external_bookings")
       .select("id, start_at, end_at, calendar_source, ical_uid, raw_uid")
       .gte("start_at", from)
       .lte("start_at", to),
   ]);
 
+  const slotsByBooking = new Map<string, number[]>();
+  for (const s of bookingSlotsResult.data ?? []) {
+    const arr = slotsByBooking.get(s.booking_id) ?? [];
+    arr.push(s.slot_number);
+    slotsByBooking.set(s.booking_id, arr);
+  }
+
   const events: CalendarEvent[] = [];
 
   for (const b of bookingsResult.data ?? []) {
     const service = b.service as unknown as { nom: string; duree_minutes: number } | null;
     const client = b.client as unknown as { nom: string; email: string; telephone: string | null } | null;
+    const bookingSlotNumbers = (slotsByBooking.get(b.id) ?? [b.slot_number]).sort();
+    const bookingIsDuo = bookingSlotNumbers.length > 1;
     events.push({
       id: b.id,
       type: "booking",
@@ -69,6 +83,9 @@ export async function GET(request: NextRequest) {
       stripePaymentId: b.stripe_payment_id,
       verificationRequise: (b as Record<string, unknown>).verification_requise ? true : undefined,
       slotNumber: b.slot_number,
+      isDuo: bookingIsDuo || undefined,
+      slotNumbers: bookingIsDuo ? bookingSlotNumbers : undefined,
+      salles: bookingIsDuo ? bookingSlotNumbers.map((n) => `salle_${n}`) : undefined,
     });
   }
 
