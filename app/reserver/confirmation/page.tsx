@@ -3,6 +3,7 @@ import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import Link from "next/link";
 import Image from "next/image";
+import { ConfirmationAdsTracking } from "@/components/ConfirmationAdsTracking";
 
 export const metadata = {
   title: "Réservation confirmée — Pure Spa Institut",
@@ -16,12 +17,13 @@ export default async function ConfirmationPage({ searchParams }: Props) {
   const params = await searchParams;
 
   let startAt: Date | null = null;
+  let adsProps: { eventKey: string; value: number; serviceName: string; paymentMethod: "online" | "onsite" } | null = null;
 
   if (params.mode === "onsite" && params.booking_id) {
     // Réservation sur place — récupérer le booking en base
     const { data: booking } = await supabaseAdmin
       .from("bookings")
-      .select("start_at")
+      .select("start_at, montant, service_id")
       .eq("id", params.booking_id)
       .single();
 
@@ -29,6 +31,19 @@ export default async function ConfirmationPage({ searchParams }: Props) {
       redirect("/");
     }
     startAt = new Date(booking.start_at);
+
+    const { data: svc } = await supabaseAdmin
+      .from("services")
+      .select("nom")
+      .eq("id", booking.service_id)
+      .single();
+
+    adsProps = {
+      eventKey: params.booking_id,
+      value: booking.montant ?? 0,
+      serviceName: svc?.nom ?? "",
+      paymentMethod: "onsite",
+    };
   } else if (params.session_id) {
     // Paiement en ligne — vérifier via Stripe
     let session;
@@ -43,6 +58,24 @@ export default async function ConfirmationPage({ searchParams }: Props) {
     }
 
     startAt = session.metadata?.start_at ? new Date(session.metadata.start_at) : null;
+
+    const serviceId = session.metadata?.service_id;
+    let serviceName = "";
+    if (serviceId) {
+      const { data: svc } = await supabaseAdmin
+        .from("services")
+        .select("nom")
+        .eq("id", serviceId)
+        .single();
+      serviceName = svc?.nom ?? "";
+    }
+
+    adsProps = {
+      eventKey: params.session_id,
+      value: Number(session.metadata?.montant_total ?? 0),
+      serviceName,
+      paymentMethod: "online",
+    };
   } else {
     redirect("/");
   }
@@ -106,6 +139,14 @@ export default async function ConfirmationPage({ searchParams }: Props) {
           </Link>
         </div>
       </div>
+      {adsProps && (
+        <ConfirmationAdsTracking
+          eventKey={adsProps.eventKey}
+          value={adsProps.value}
+          serviceName={adsProps.serviceName}
+          paymentMethod={adsProps.paymentMethod}
+        />
+      )}
     </main>
   );
 }

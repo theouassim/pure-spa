@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createBooking } from "@/lib/create-booking";
 import { sendBookingConfirmation } from "@/lib/emails";
+import { sendBookingConfirmedEvent } from "@/lib/ads/send-server-events";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { serviceId, start, end, contact } = body;
+  const { serviceId, start, end, contact, ads } = body;
 
   if (!serviceId || !start || !end || !contact?.nom || !contact?.email || !contact?.telephone) {
     return NextResponse.json({ error: "Données manquantes" }, { status: 400 });
@@ -62,6 +63,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Erreur serveur", reason: result.reason }, { status: 500 });
   }
 
+  if (ads) {
+    await supabaseAdmin.from("bookings").update({
+      ads_fbp: ads.fbp ?? null,
+      ads_fbc: ads.fbc ?? null,
+      ads_ttclid: ads.ttclid ?? null,
+      ads_ttp: ads.ttp ?? null,
+      ads_gclid: ads.gclid ?? null,
+      ads_client_ua: request.headers.get("user-agent") ?? null,
+      ads_client_ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+      ads_event_source_url: ads.event_source_url ?? null,
+      ads_event_key: result.bookingId,
+    }).eq("id", result.bookingId);
+  }
+
   const { data: service } = await supabaseAdmin
     .from("services")
     .select("nom, duree_minutes, prix")
@@ -74,6 +89,38 @@ export async function POST(request: NextRequest) {
       { nom: contact.nom, email: contact.email },
       service
     );
+  }
+
+  if (ads && service) {
+    const nameParts = contact.nom.trim().split(/\s+/);
+    const firstName = nameParts[0] ?? "";
+    const lastName = nameParts.slice(1).join(" ");
+
+    try {
+      await sendBookingConfirmedEvent({
+        bookingId: result.bookingId,
+        eventKey: result.bookingId,
+        serviceName: service.nom,
+        valueCents: service.prix,
+        email: contact.email,
+        phone: contact.telephone,
+        firstName,
+        lastName,
+        adsData: {
+          ads_fbp: ads.fbp ?? null,
+          ads_fbc: ads.fbc ?? null,
+          ads_ttclid: ads.ttclid ?? null,
+          ads_ttp: ads.ttp ?? null,
+          ads_gclid: ads.gclid ?? null,
+          ads_client_ua: request.headers.get("user-agent") ?? null,
+          ads_client_ip: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
+          ads_event_source_url: ads.event_source_url ?? null,
+          ads_event_key: result.bookingId,
+        },
+      });
+    } catch (err) {
+      console.error("[book-onsite] ads send failed:", err);
+    }
   }
 
   return NextResponse.json({ success: true, bookingId: result.bookingId });

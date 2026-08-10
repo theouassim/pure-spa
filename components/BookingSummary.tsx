@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { track } from "@/lib/tracking";
+import { useAdsTracking } from "@/hooks/useAdsTracking";
+import { getAdsIdentifiers } from "@/lib/ads/identity";
 import type { ContactData, ServiceData, SlotData } from "./BookingFunnel";
 
 interface Props {
@@ -40,12 +42,20 @@ function formatTime(isoString: string): string {
 export function BookingSummary({ service, slot, contact, onSlotExpired }: Props) {
   const [loading, setLoading] = useState<"online" | "onsite" | null>(null);
   const [error, setError] = useState<{ message: string; action?: "retry" | "slot" } | null>(null);
+  const { fireAds, fireAdsOnce } = useAdsTracking();
+
+  useEffect(() => {
+    fireAdsOnce("checkout_started", { event: "ads_checkout_started", service_id: service.id, service_name: service.nom, value: service.prix, currency: "EUR", payment_method: "onsite" });
+  }, [service, fireAdsOnce]);
 
   async function handlePayOnline() {
     setLoading("online");
     setError(null);
 
     track("payment_initiated", { service_id: service.id, start: slot.start, mode: "online" });
+    fireAds({ event: "ads_payment_method_selected", service_id: service.id, payment_method: "online" });
+
+    const adsIds = getAdsIdentifiers();
 
     try {
       const res = await fetch("/api/checkout", {
@@ -56,6 +66,7 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
           start: slot.start,
           end: slot.end,
           contact,
+          ads: { ...adsIds, event_source_url: window.location.href },
         }),
       });
 
@@ -86,6 +97,9 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
     setError(null);
 
     track("payment_initiated", { service_id: service.id, start: slot.start, mode: "on_site" });
+    fireAds({ event: "ads_payment_method_selected", service_id: service.id, payment_method: "onsite" });
+
+    const adsIds = getAdsIdentifiers();
 
     try {
       const res = await fetch("/api/book-onsite", {
@@ -96,6 +110,7 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
           start: slot.start,
           end: slot.end,
           contact,
+          ads: { ...adsIds, event_source_url: window.location.href },
         }),
       });
 

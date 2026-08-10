@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { track } from "@/lib/tracking";
+import { useAdsTracking } from "@/hooks/useAdsTracking";
 import { ServicePicker } from "./ServicePicker";
 import { SlotPicker } from "./SlotPicker";
 import { ContactForm } from "./ContactForm";
@@ -58,6 +59,7 @@ export function BookingFunnel() {
   const [contact, setContact] = useState<ContactData | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [slotExpired, setSlotExpired] = useState(false);
+  const { fireAds } = useAdsTracking();
 
   useEffect(() => {
     track("funnel_start");
@@ -91,12 +93,14 @@ export function BookingFunnel() {
       service_name: service.nom,
       price: service.prix,
     });
+    fireAds({ event: "ads_service_selected", service_id: service.id, service_name: service.nom, value: service.prix, currency: "EUR" });
     setStep("slot");
   }
 
   function handleSlotSelect(slot: SlotData) {
     setSelectedSlot(slot);
     track("slot_selected", { start: slot.start, end: slot.end });
+    fireAds({ event: "ads_datetime_selected", service_id: selectedService!.id, service_name: selectedService!.nom, datetime: slot.start });
     setStep("contact");
   }
 
@@ -133,6 +137,7 @@ export function BookingFunnel() {
         return;
       }
 
+      fireAds({ event: "ads_contact_submitted", service_id: selectedService!.id, service_name: selectedService!.nom });
       setStep("summary");
     } catch {
       setError("La vérification du créneau a échoué. Vérifiez votre connexion et réessayez.");
