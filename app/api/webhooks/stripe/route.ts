@@ -3,6 +3,7 @@ import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createBooking } from "@/lib/create-booking";
 import { sendBookingConfirmation } from "@/lib/emails";
+import { sendBookingConfirmedEvent, sendPaymentCompletedEvent } from "@/lib/ads/send-server-events";
 import type Stripe from "stripe";
 
 export async function POST(request: NextRequest) {
@@ -69,6 +70,18 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     return;
   }
 
+  await supabaseAdmin.from("bookings").update({
+    ads_fbp: meta.ads_fbp || null,
+    ads_fbc: meta.ads_fbc || null,
+    ads_ttclid: meta.ads_ttclid || null,
+    ads_ttp: meta.ads_ttp || null,
+    ads_gclid: meta.ads_gclid || null,
+    ads_client_ua: meta.ads_client_ua || null,
+    ads_client_ip: meta.ads_client_ip || null,
+    ads_event_source_url: meta.ads_event_source_url || null,
+    ads_event_key: session.id,
+  }).eq("id", result.bookingId);
+
   await supabaseAdmin.from("funnel_events").insert({
     session_id: session.id,
     event_name: "payment_confirmed",
@@ -82,12 +95,12 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
 
   const { data: service } = await supabaseAdmin
     .from("services")
-    .select("nom, duree_minutes")
+    .select("nom, duree_minutes, prix")
     .eq("id", meta.service_id)
     .single();
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("nom, email")
+    .select("nom, email, telephone")
     .eq("id", meta.client_id)
     .single();
 
@@ -97,6 +110,49 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
       client,
       service
     );
+
+    try {
+      const nameParts = client.nom.trim().split(/\s+/);
+      const firstName = nameParts[0] ?? "";
+      const lastName = nameParts.slice(1).join(" ");
+      const adsData = {
+        ads_fbp: meta.ads_fbp || null,
+        ads_fbc: meta.ads_fbc || null,
+        ads_ttclid: meta.ads_ttclid || null,
+        ads_ttp: meta.ads_ttp || null,
+        ads_gclid: meta.ads_gclid || null,
+        ads_client_ua: meta.ads_client_ua || null,
+        ads_client_ip: meta.ads_client_ip || null,
+        ads_event_source_url: meta.ads_event_source_url || null,
+        ads_event_key: session.id,
+      };
+
+      await sendPaymentCompletedEvent({
+        bookingId: result.bookingId,
+        eventKey: session.id,
+        serviceName: service.nom,
+        valueCents: service.prix,
+        email: client.email,
+        phone: client.telephone ?? null,
+        firstName,
+        lastName,
+        adsData,
+      });
+
+      await sendBookingConfirmedEvent({
+        bookingId: result.bookingId,
+        eventKey: session.id,
+        serviceName: service.nom,
+        valueCents: service.prix,
+        email: client.email,
+        phone: client.telephone ?? null,
+        firstName,
+        lastName,
+        adsData,
+      });
+    } catch (err) {
+      console.error("[stripe-webhook] ads send failed:", err);
+    }
   }
 }
 

@@ -7,7 +7,7 @@ import type { AdminSettings, Service } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { serviceId, start, end, contact } = body;
+  const { serviceId, start, end, contact, ads } = body;
 
   if (!serviceId || !start || !end || !contact?.nom || !contact?.email || !contact?.telephone) {
     return NextResponse.json({ error: "Données manquantes" }, { status: 400 });
@@ -117,6 +117,14 @@ export async function POST(request: NextRequest) {
       end_at: slotEnd.toISOString(),
       mode_paiement: typedSettings.mode_paiement,
       montant_total: String(typedService.prix),
+      ads_fbp: truncMeta(ads?.fbp),
+      ads_fbc: truncMeta(ads?.fbc),
+      ads_ttclid: truncMeta(ads?.ttclid),
+      ads_ttp: truncMeta(ads?.ttp),
+      ads_gclid: truncMeta(ads?.gclid),
+      ads_event_source_url: truncMeta(ads?.event_source_url),
+      ads_client_ua: truncMeta(request.headers.get("user-agent")),
+      ads_client_ip: truncMeta(request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()),
     },
     success_url: `${origin}/reserver/confirmation?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/reserver?cancelled=1`,
@@ -124,4 +132,9 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ url: session.url });
+}
+
+function truncMeta(value: string | null | undefined): string {
+  if (!value) return "";
+  return value.slice(0, 490);
 }

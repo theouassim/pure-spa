@@ -35,6 +35,25 @@ export interface Booking {
   statut_paiement: StatutPaiement;
   stripe_payment_id: string | null;
   created_at: string;
+  ads_fbp: string | null;
+  ads_fbc: string | null;
+  ads_ttclid: string | null;
+  ads_ttp: string | null;
+  ads_gclid: string | null;
+  ads_client_ua: string | null;
+  ads_client_ip: string | null;
+  ads_event_source_url: string | null;
+  ads_event_key: string | null;
+  ads_booking_sent_at: string | null;
+  ads_payment_sent_at: string | null;
+}
+
+export interface TrackingServerCredentials {
+  provider: "meta" | "tiktok";
+  access_token: string;
+  dataset_id: string;
+  test_event_code: string;
+  updated_at: string;
 }
 
 export interface ExternalBooking {
