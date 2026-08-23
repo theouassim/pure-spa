@@ -33,7 +33,7 @@ BEGIN
     statut, montant, statut_paiement, stripe_payment_id, verification_requise
   ) VALUES (
     p_service_id, p_client_id, p_start_at, p_end_at, v_primary_slot,
-    p_statut, p_montant, p_statut_paiement, p_stripe_payment_id, p_verification_requise
+    p_statut::booking_status, p_montant, p_statut_paiement, p_stripe_payment_id, p_verification_requise
   )
   RETURNING id INTO v_booking_id;
 

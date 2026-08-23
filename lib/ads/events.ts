@@ -25,7 +25,6 @@ export interface AdsCheckoutStarted {
   service_name: string;
   value: number;
   currency: "EUR";
-  payment_method: "online" | "onsite";
 }
 
 export interface AdsPaymentMethodSelected {

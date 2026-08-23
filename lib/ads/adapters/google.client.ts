@@ -26,12 +26,14 @@ export function buildGtagPayload(event: AdsEvent): GtagEventPayload | null {
   if (shouldFirePurchase(event)) {
     if (!("value" in event)) return null;
     const eventKey = "event_key" in event ? event.event_key : funnelEventId();
+    const paymentMethod = "payment_method" in event ? event.payment_method : undefined;
     return {
       gtagEventName: "purchase",
       params: {
         transaction_id: eventKey,
         value: event.value / 100,
         currency: "EUR",
+        ...(paymentMethod && { payment_method: paymentMethod }),
         items: [
           {
             item_id: event.service_id,

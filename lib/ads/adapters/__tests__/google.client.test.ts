@@ -48,11 +48,9 @@ describe("google.client adapter", () => {
         service_name: "Massage",
         value: 7500,
         currency: "EUR",
-        payment_method: "online",
       };
       const payload = buildGtagPayload(event);
       expect(payload!.gtagEventName).toBe("begin_checkout");
-      expect(payload!.params.payment_type).toBe("online");
     });
 
     it("maps ads_payment_method_selected to add_payment_info", () => {

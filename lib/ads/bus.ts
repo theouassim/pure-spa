@@ -1,6 +1,9 @@
-import type { AdsEvent, AdsEventName } from "./events";
+import type { AdsEvent } from "./events";
 import { getAdsConfig, getAdsConfigSync, type AdsConfig } from "./config";
-import { getConsent, type ConsentCategories } from "@/lib/consent";
+import { getConsent } from "@/lib/consent";
+import { fireMetaClient } from "./adapters/meta.client";
+import { fireTikTokClient } from "./adapters/tiktok.client";
+import { fireGtagClient } from "./adapters/google.client";
 
 declare global {
   interface Window {
@@ -16,7 +19,8 @@ interface QueuedEvent {
 }
 
 const MAX_QUEUE_SIZE = 50;
-const MAX_QUEUE_AGE_MS = 10 * 60 * 1000;
+// Durée max de rétention d'un événement en file (RGPD : pas de rattrapage rétroactif du consentement)
+const MAX_QUEUE_AGE_MS = 3 * 60 * 1000;
 const DEBUG_KEY = "PURE_SPA_ADS_DEBUG";
 
 let queue: QueuedEvent[] = [];
@@ -60,10 +64,6 @@ function getEventId(event: AdsEvent): string | null {
   return null;
 }
 
-function isConversionEvent(name: AdsEventName): boolean {
-  return name === "ads_booking_confirmed" || name === "ads_payment_completed";
-}
-
 function hasMarketingConsent(): boolean {
   const consent = getConsent();
   return consent?.marketing === true;
@@ -89,103 +89,19 @@ function isGtagReady(): boolean {
 function fireToMeta(event: AdsEvent, config: AdsConfig): void {
   if (!config.meta_pixel_enabled || !config.meta_pixel_id) return;
   if (!hasMarketingConsent()) return;
-  if (!isMetaReady()) return;
-
-  const params: Record<string, unknown> = {};
-  if ("value" in event) params.value = event.value / 100;
-  if ("currency" in event) params.currency = event.currency;
-  if ("service_name" in event) params.content_name = event.service_name;
-  if ("service_id" in event) params.content_ids = [event.service_id];
-
-  const eventId = getEventId(event);
-  const options: Record<string, unknown> = {};
-  if (eventId) options.eventID = eventId;
-
-  const fbEventName = mapToMetaEvent(event.event);
-  if (!fbEventName) return;
-
-  if (Object.keys(options).length > 0) {
-    window.fbq!("track", fbEventName, params, options);
-  } else {
-    window.fbq!("trackCustom", fbEventName, params);
-  }
-}
-
-function mapToMetaEvent(name: AdsEventName): string | null {
-  switch (name) {
-    case "ads_service_selected": return "ViewContent";
-    case "ads_datetime_selected": return null;
-    case "ads_contact_submitted": return "Lead";
-    case "ads_checkout_started": return "InitiateCheckout";
-    case "ads_payment_method_selected": return null;
-    case "ads_booking_confirmed": return "Schedule";
-    case "ads_payment_completed": return "Purchase";
-  }
+  fireMetaClient(event);
 }
 
 function fireToTikTok(event: AdsEvent, config: AdsConfig): void {
   if (!config.tiktok_pixel_enabled || !config.tiktok_pixel_id) return;
   if (!hasMarketingConsent()) return;
-  if (!isTikTokReady()) return;
-
-  const params: Record<string, unknown> = {};
-  if ("value" in event) params.value = event.value / 100;
-  if ("currency" in event) params.currency = event.currency;
-  if ("service_id" in event) params.content_id = event.service_id;
-  if ("service_name" in event) params.content_name = event.service_name;
-
-  const eventId = getEventId(event);
-  if (eventId) params.event_id = eventId;
-
-  const ttEventName = mapToTikTokEvent(event.event);
-  if (!ttEventName) return;
-
-  window.ttq!.track(ttEventName, params);
-}
-
-function mapToTikTokEvent(name: AdsEventName): string | null {
-  switch (name) {
-    case "ads_service_selected": return "ViewContent";
-    case "ads_datetime_selected": return null;
-    case "ads_contact_submitted": return "SubmitForm";
-    case "ads_checkout_started": return "InitiateCheckout";
-    case "ads_payment_method_selected": return null;
-    case "ads_booking_confirmed": return "CompleteRegistration";
-    case "ads_payment_completed": return "CompletePayment";
-  }
+  fireTikTokClient(event);
 }
 
 function fireToGtag(event: AdsEvent, config: AdsConfig): void {
   if (!config.ga4_enabled && !config.google_ads_enabled) return;
   if (!hasAnalyticsConsent()) return;
-  if (!isGtagReady()) return;
-
-  const params: Record<string, unknown> = {};
-  if ("value" in event) params.value = event.value / 100;
-  if ("currency" in event) params.currency = event.currency;
-  if ("service_id" in event) params.item_id = event.service_id;
-  if ("service_name" in event) params.item_name = event.service_name;
-  if ("payment_method" in event) params.payment_type = event.payment_method;
-
-  const eventId = getEventId(event);
-  if (eventId) params.transaction_id = eventId;
-
-  const gtagEventName = mapToGtagEvent(event.event);
-  if (!gtagEventName) return;
-
-  window.gtag!("event", gtagEventName, params);
-}
-
-function mapToGtagEvent(name: AdsEventName): string | null {
-  switch (name) {
-    case "ads_service_selected": return "view_item";
-    case "ads_datetime_selected": return "add_to_cart";
-    case "ads_contact_submitted": return "generate_lead";
-    case "ads_checkout_started": return "begin_checkout";
-    case "ads_payment_method_selected": return "add_payment_info";
-    case "ads_booking_confirmed": return "purchase";
-    case "ads_payment_completed": return "purchase";
-  }
+  fireGtagClient(event);
 }
 
 function dispatchEvent(event: AdsEvent, config: AdsConfig): void {

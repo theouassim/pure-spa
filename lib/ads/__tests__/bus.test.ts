@@ -194,11 +194,11 @@ describe("bus", () => {
   });
 
   describe("queue purge by age", () => {
-    it("purges events older than 10 minutes", () => {
+    it("purges events older than 3 minutes", () => {
       mockedGetAdsConfigSync.mockReturnValue(null);
       trackAds(SERVICE_SELECTED);
 
-      vi.advanceTimersByTime(11 * 60 * 1000);
+      vi.advanceTimersByTime(4 * 60 * 1000);
 
       mockedGetAdsConfigSync.mockReturnValue(BASE_CONFIG);
       mockedGetConsent.mockReturnValue({ analytics: true, marketing: true });

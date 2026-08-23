@@ -49,12 +49,10 @@ describe("tiktok.client adapter", () => {
         service_name: "Massage",
         value: 7500,
         currency: "EUR",
-        payment_method: "online",
       };
       const payload = buildTikTokPayload(event);
       expect(payload!.ttEventName).toBe("InitiateCheckout");
       expect(payload!.params.value).toBe(75);
-      expect(payload!.params.payment_method).toBe("online");
     });
 
     it("maps ads_payment_method_selected to AddPaymentInfo", () => {

@@ -47,8 +47,8 @@
 | Formulaire validé | booking_submitted | ads_contact_submitted | ContactDetailsSubmitted (custom) | SubmitForm | generate_lead |
 | Récap affiché | — | ads_checkout_started | InitiateCheckout | InitiateCheckout | begin_checkout |
 | Choix mode paiement | payment_initiated | ads_payment_method_selected | PaymentMethodSelected (custom) | AddPaymentInfo | add_payment_info |
-| Booking confirmé (serveur) | booking_confirmed / payment_confirmed | ads_booking_confirmed | Schedule | PlaceAnOrder | purchase (onsite uniquement) |
-| Paiement réussi (serveur) | payment_confirmed | ads_payment_completed | Purchase | CompletePayment | purchase (online uniquement) |
+| Booking confirmé (serveur) | booking_confirmed / payment_confirmed | ads_booking_confirmed | Schedule | PlaceAnOrder | purchase (onsite) + `payment_method: "onsite"` |
+| Paiement réussi (serveur) | payment_confirmed | ads_payment_completed | Purchase | CompletePayment | purchase (online) + `payment_method: "online"` |
 
 ## Mécanisme d'event_key
 
@@ -92,6 +92,7 @@ RETURNING id;
 - Le bus vérifie le consent AVANT chaque dispatch et à chaque flush de queue
 - Si refusé → l'event est jeté, jamais envoyé
 - Les envois CAPI serveur ne sont PAS soumis au consent client (donnée first-party légitime)
+- **File d'attente (queue)** : les événements non dispatchés sont conservés max **3 minutes** (`MAX_QUEUE_AGE_MS`). Au-delà, ils sont purgés — le consentement n'étant pas rétroactif au sens RGPD, un rattrapage tardif n'est pas acceptable.
 
 ## Credentials à saisir
 

@@ -45,7 +45,7 @@ export function BookingSummary({ service, slot, contact, onSlotExpired }: Props)
   const { fireAds, fireAdsOnce } = useAdsTracking();
 
   useEffect(() => {
-    fireAdsOnce("checkout_started", { event: "ads_checkout_started", service_id: service.id, service_name: service.nom, value: service.prix, currency: "EUR", payment_method: "onsite" });
+    fireAdsOnce("checkout_started", { event: "ads_checkout_started", service_id: service.id, service_name: service.nom, value: service.prix, currency: "EUR" });
   }, [service, fireAdsOnce]);
 
   async function handlePayOnline() {
