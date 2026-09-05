@@ -30,10 +30,18 @@ interface SendConversionInput {
 }
 
 export async function sendBookingConfirmedEvent(input: SendConversionInput): Promise<void> {
-  if (await isTestBooking(input.bookingId)) return;
+  if (await isTestBooking(input.bookingId)) {
+    console.log(`[ads] Schedule skipped: booking ${input.bookingId} is_test=true`);
+    return;
+  }
 
   const claimed = await claimSentAt(input.bookingId, "ads_booking_sent_at");
-  if (!claimed) return;
+  if (!claimed) {
+    console.log(`[ads] Schedule skipped: booking ${input.bookingId} ads_booking_sent_at already claimed`);
+    return;
+  }
+
+  console.log(`[ads] Schedule CAPI: sending for booking ${input.bookingId}, eventKey=${input.eventKey}`);
 
   const eventId = bookingEventId(input.eventKey);
   const eventTime = Math.floor(Date.now() / 1000);
@@ -49,8 +57,8 @@ export async function sendBookingConfirmedEvent(input: SendConversionInput): Pro
     clientUserAgent: input.adsData.ads_client_ua,
   };
 
-  try {
-    await sendMetaServerEvent({
+  await Promise.all([
+    sendMetaServerEvent({
       eventName: "Schedule",
       eventId,
       eventTime,
@@ -62,13 +70,9 @@ export async function sendBookingConfirmedEvent(input: SendConversionInput): Pro
         currency: "EUR",
         content_name: input.serviceName,
       },
-    });
-  } catch (err) {
-    console.error("[ads] Meta CAPI Schedule failed:", err);
-  }
+    }).catch((err) => console.error("[ads] Meta CAPI Schedule failed:", err)),
 
-  try {
-    await sendTikTokServerEvent({
+    sendTikTokServerEvent({
       eventName: "PlaceAnOrder",
       eventId,
       eventTime,
@@ -86,17 +90,23 @@ export async function sendBookingConfirmedEvent(input: SendConversionInput): Pro
         currency: "EUR",
         content_name: input.serviceName,
       },
-    });
-  } catch (err) {
-    console.error("[ads] TikTok Events API PlaceAnOrder failed:", err);
-  }
+    }).catch((err) => console.error("[ads] TikTok Events API PlaceAnOrder failed:", err)),
+  ]);
 }
 
 export async function sendPaymentCompletedEvent(input: SendConversionInput): Promise<void> {
-  if (await isTestBooking(input.bookingId)) return;
+  if (await isTestBooking(input.bookingId)) {
+    console.log(`[ads] Purchase skipped: booking ${input.bookingId} is_test=true`);
+    return;
+  }
 
   const claimed = await claimSentAt(input.bookingId, "ads_payment_sent_at");
-  if (!claimed) return;
+  if (!claimed) {
+    console.log(`[ads] Purchase skipped: booking ${input.bookingId} ads_payment_sent_at already claimed`);
+    return;
+  }
+
+  console.log(`[ads] Purchase CAPI: sending for booking ${input.bookingId}, eventKey=${input.eventKey}`);
 
   const eventId = paymentEventId(input.eventKey);
   const eventTime = Math.floor(Date.now() / 1000);
@@ -112,8 +122,8 @@ export async function sendPaymentCompletedEvent(input: SendConversionInput): Pro
     clientUserAgent: input.adsData.ads_client_ua,
   };
 
-  try {
-    await sendMetaServerEvent({
+  await Promise.all([
+    sendMetaServerEvent({
       eventName: "Purchase",
       eventId,
       eventTime,
@@ -125,13 +135,9 @@ export async function sendPaymentCompletedEvent(input: SendConversionInput): Pro
         currency: "EUR",
         content_name: input.serviceName,
       },
-    });
-  } catch (err) {
-    console.error("[ads] Meta CAPI Purchase failed:", err);
-  }
+    }).catch((err) => console.error("[ads] Meta CAPI Purchase failed:", err)),
 
-  try {
-    await sendTikTokServerEvent({
+    sendTikTokServerEvent({
       eventName: "CompletePayment",
       eventId,
       eventTime,
@@ -149,10 +155,8 @@ export async function sendPaymentCompletedEvent(input: SendConversionInput): Pro
         currency: "EUR",
         content_name: input.serviceName,
       },
-    });
-  } catch (err) {
-    console.error("[ads] TikTok Events API CompletePayment failed:", err);
-  }
+    }).catch((err) => console.error("[ads] TikTok Events API CompletePayment failed:", err)),
+  ]);
 }
 
 async function isTestBooking(bookingId: string): Promise<boolean> {

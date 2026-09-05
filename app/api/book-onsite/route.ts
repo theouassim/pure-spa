@@ -83,11 +83,15 @@ export async function POST(request: NextRequest) {
     .eq("id", serviceId)
     .single();
 
+  const promises: Promise<void>[] = [];
+
   if (service) {
-    await sendBookingConfirmation(
-      { id: result.bookingId, start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
-      { nom: contact.nom, email: contact.email },
-      service
+    promises.push(
+      sendBookingConfirmation(
+        { id: result.bookingId, start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
+        { nom: contact.nom, email: contact.email },
+        service
+      ).catch((err) => console.error("[book-onsite] email failed:", err))
     );
   }
 
@@ -96,8 +100,8 @@ export async function POST(request: NextRequest) {
     const firstName = nameParts[0] ?? "";
     const lastName = nameParts.slice(1).join(" ");
 
-    try {
-      await sendBookingConfirmedEvent({
+    promises.push(
+      sendBookingConfirmedEvent({
         bookingId: result.bookingId,
         eventKey: result.bookingId,
         serviceName: service.nom,
@@ -117,11 +121,11 @@ export async function POST(request: NextRequest) {
           ads_event_source_url: ads.event_source_url ?? null,
           ads_event_key: result.bookingId,
         },
-      });
-    } catch (err) {
-      console.error("[book-onsite] ads send failed:", err);
-    }
+      }).catch((err) => console.error("[book-onsite] ads send failed:", err))
+    );
   }
+
+  await Promise.all(promises);
 
   return NextResponse.json({ success: true, bookingId: result.bookingId });
 }
