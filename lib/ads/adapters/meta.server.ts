@@ -56,7 +56,10 @@ function buildUserData(input: MetaServerEventInput["userData"]): Record<string, 
 
 export async function sendMetaServerEvent(input: MetaServerEventInput): Promise<void> {
   const creds = await getCredentials();
-  if (!creds) return;
+  if (!creds) {
+    console.error(`[meta-capi] No credentials found for provider=meta, skipping ${input.eventName}`);
+    return;
+  }
 
   const payload = {
     data: [
@@ -93,10 +96,13 @@ async function fetchWithRetry(url: string, body: unknown, retries = 1): Promise<
 
       clearTimeout(timeout);
 
-      if (res.ok) return;
+      if (res.ok) {
+        console.log(`[meta-capi] OK ${(body as { data: { event_name: string }[] }).data[0]?.event_name} sent`);
+        return;
+      }
 
       const text = await res.text().catch(() => "");
-      console.error(`[meta-capi] HTTP ${res.status} attempt ${attempt + 1}:`, text);
+      console.error(`[meta-capi] HTTP ${res.status} attempt ${attempt + 1} (${(body as { data: { event_name: string }[] }).data[0]?.event_name}):`, text);
     } catch (err) {
       console.error(`[meta-capi] Network error attempt ${attempt + 1}:`, err instanceof Error ? err.message : err);
     }

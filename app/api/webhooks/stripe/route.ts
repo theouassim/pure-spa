@@ -105,54 +105,44 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     .single();
 
   if (service && client) {
-    await sendBookingConfirmation(
-      { id: result.bookingId, start_at: meta.start_at, montant: session.amount_total, statut_paiement: "paye_en_ligne" },
-      client,
-      service
-    );
+    const nameParts = client.nom.trim().split(/\s+/);
+    const firstName = nameParts[0] ?? "";
+    const lastName = nameParts.slice(1).join(" ");
+    const adsData = {
+      ads_fbp: meta.ads_fbp || null,
+      ads_fbc: meta.ads_fbc || null,
+      ads_ttclid: meta.ads_ttclid || null,
+      ads_ttp: meta.ads_ttp || null,
+      ads_gclid: meta.ads_gclid || null,
+      ads_client_ua: meta.ads_client_ua || null,
+      ads_client_ip: meta.ads_client_ip || null,
+      ads_event_source_url: meta.ads_event_source_url || null,
+      ads_event_key: session.id,
+    };
 
-    try {
-      const nameParts = client.nom.trim().split(/\s+/);
-      const firstName = nameParts[0] ?? "";
-      const lastName = nameParts.slice(1).join(" ");
-      const adsData = {
-        ads_fbp: meta.ads_fbp || null,
-        ads_fbc: meta.ads_fbc || null,
-        ads_ttclid: meta.ads_ttclid || null,
-        ads_ttp: meta.ads_ttp || null,
-        ads_gclid: meta.ads_gclid || null,
-        ads_client_ua: meta.ads_client_ua || null,
-        ads_client_ip: meta.ads_client_ip || null,
-        ads_event_source_url: meta.ads_event_source_url || null,
-        ads_event_key: session.id,
-      };
+    const conversionInput = {
+      bookingId: result.bookingId,
+      eventKey: session.id,
+      serviceName: service.nom,
+      valueCents: service.prix,
+      email: client.email,
+      phone: client.telephone ?? null,
+      firstName,
+      lastName,
+      adsData,
+    };
 
-      await sendPaymentCompletedEvent({
-        bookingId: result.bookingId,
-        eventKey: session.id,
-        serviceName: service.nom,
-        valueCents: service.prix,
-        email: client.email,
-        phone: client.telephone ?? null,
-        firstName,
-        lastName,
-        adsData,
-      });
-
-      await sendBookingConfirmedEvent({
-        bookingId: result.bookingId,
-        eventKey: session.id,
-        serviceName: service.nom,
-        valueCents: service.prix,
-        email: client.email,
-        phone: client.telephone ?? null,
-        firstName,
-        lastName,
-        adsData,
-      });
-    } catch (err) {
-      console.error("[stripe-webhook] ads send failed:", err);
-    }
+    await Promise.all([
+      sendBookingConfirmation(
+        { id: result.bookingId, start_at: meta.start_at, montant: session.amount_total, statut_paiement: "paye_en_ligne" },
+        client,
+        service
+      ).catch((err) => console.error("[stripe-webhook] email failed:", err)),
+      sendPaymentCompletedEvent(conversionInput)
+        .catch((err) => console.error("[stripe-webhook] ads Purchase failed:", err)),
+      sendBookingConfirmedEvent(conversionInput)
+        .catch((err) => console.error("[stripe-webhook] ads Schedule failed:", err)),
+    ]);
   }
 }
 
