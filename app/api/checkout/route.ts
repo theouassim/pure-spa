@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { parseBookingContact } from "@/lib/contact";
 import { getAvailableSlots } from "@/lib/availability-service";
 import { syncAllSalles } from "@/lib/planity-sync";
 import type { AdminSettings, Service } from "@/lib/types";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { serviceId, start, end, contact, ads } = body;
+  const { serviceId, start, end, ads } = body;
+  const contact = parseBookingContact(body.contact);
 
-  if (!serviceId || !start || !end || !contact?.nom || !contact?.email || !contact?.telephone) {
+  if (!serviceId || !start || !end || !contact) {
     return NextResponse.json({ error: "Données manquantes" }, { status: 400 });
   }
 

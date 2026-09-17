@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { parseBookingContact } from "@/lib/contact";
 import { createBooking } from "@/lib/create-booking";
 import { sendBookingConfirmation } from "@/lib/emails";
 import { sendBookingConfirmedEvent } from "@/lib/ads/send-server-events";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { serviceId, start, end, contact, ads } = body;
+  const { serviceId, start, end, ads } = body;
+  const contact = parseBookingContact(body.contact);
 
-  if (!serviceId || !start || !end || !contact?.nom || !contact?.email || !contact?.telephone) {
+  if (!serviceId || !start || !end || !contact) {
     return NextResponse.json({ error: "Données manquantes" }, { status: 400 });
   }
 
@@ -96,10 +98,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (ads && service) {
-    const nameParts = contact.nom.trim().split(/\s+/);
-    const firstName = nameParts[0] ?? "";
-    const lastName = nameParts.slice(1).join(" ");
-
     promises.push(
       sendBookingConfirmedEvent({
         bookingId: result.bookingId,
@@ -108,8 +106,8 @@ export async function POST(request: NextRequest) {
         valueCents: service.prix,
         email: contact.email,
         phone: contact.telephone,
-        firstName,
-        lastName,
+        firstName: contact.prenom,
+        lastName: contact.nomFamille,
         adsData: {
           ads_fbp: ads.fbp ?? null,
           ads_fbc: ads.fbc ?? null,

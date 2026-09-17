@@ -11,7 +11,8 @@ interface Props {
 }
 
 export function ContactForm({ onSubmit, onBack, verifying }: Props) {
-  const [nom, setNom] = useState("");
+  const [prenom, setPrenom] = useState("");
+  const [nomFamille, setNomFamille] = useState("");
   const [email, setEmail] = useState("");
   const [telephone, setTelephone] = useState("");
   const [consentRgpd, setConsentRgpd] = useState(false);
@@ -27,7 +28,8 @@ export function ContactForm({ onSubmit, onBack, verifying }: Props) {
 
   function validate(): Record<string, string> {
     const errs: Record<string, string> = {};
-    if (!nom.trim()) errs.nom = "Veuillez saisir votre nom";
+    if (!prenom.trim()) errs.prenom = "Veuillez saisir votre prénom";
+    if (!nomFamille.trim()) errs.nomFamille = "Veuillez saisir votre nom";
     if (!email.trim()) {
       errs.email = "Veuillez saisir votre email";
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
@@ -48,7 +50,15 @@ export function ContactForm({ onSubmit, onBack, verifying }: Props) {
     const errs = validate();
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
-    onSubmit({ nom: nom.trim(), email: email.trim(), telephone: telephone.trim() });
+    const p = prenom.trim().replace(/\s+/g, " ");
+    const n = nomFamille.trim().replace(/\s+/g, " ");
+    onSubmit({
+      prenom: p,
+      nomFamille: n,
+      nom: `${p} ${n}`,
+      email: email.trim(),
+      telephone: telephone.trim(),
+    });
   }
 
   return (
@@ -63,16 +73,40 @@ export function ContactForm({ onSubmit, onBack, verifying }: Props) {
       <h2 className="text-lg font-semibold text-text mb-6">Vos coordonnées</h2>
 
       <div className="flex flex-col gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text mb-1">Nom complet</label>
-          <input
-            type="text"
-            value={nom}
-            onChange={(e) => setNom(e.target.value)}
-            className="w-full rounded-lg border border-border bg-bg-card px-4 py-2.5 text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
-            placeholder="Marie Dupont"
-          />
-          {errors.nom && <p className="mt-1 text-xs text-error">{errors.nom}</p>}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="contact-prenom" className="block text-sm font-medium text-text mb-1">
+              Prénom <span className="text-error">*</span>
+            </label>
+            <input
+              id="contact-prenom"
+              type="text"
+              required
+              autoComplete="given-name"
+              value={prenom}
+              onChange={(e) => setPrenom(e.target.value)}
+              className="w-full rounded-lg border border-border bg-bg-card px-4 py-2.5 text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+              placeholder="Marie"
+            />
+            {errors.prenom && <p className="mt-1 text-xs text-error">{errors.prenom}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="contact-nom" className="block text-sm font-medium text-text mb-1">
+              Nom <span className="text-error">*</span>
+            </label>
+            <input
+              id="contact-nom"
+              type="text"
+              required
+              autoComplete="family-name"
+              value={nomFamille}
+              onChange={(e) => setNomFamille(e.target.value)}
+              className="w-full rounded-lg border border-border bg-bg-card px-4 py-2.5 text-text focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+              placeholder="Dupont"
+            />
+            {errors.nomFamille && <p className="mt-1 text-xs text-error">{errors.nomFamille}</p>}
+          </div>
         </div>
 
         <div>
