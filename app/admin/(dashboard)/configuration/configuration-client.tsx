@@ -16,6 +16,7 @@ export function ConfigurationClient() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [catalogVersion, setCatalogVersion] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -84,9 +85,9 @@ export function ConfigurationClient() {
         onChange={(updates) => setSettings({ ...settings, ...updates })}
       />
 
-      <ServicesSection />
+      <ServicesSection onCatalogChange={() => setCatalogVersion((v) => v + 1)} />
 
-      <CategoriesSection />
+      <CategoriesSection refreshKey={catalogVersion} />
 
       <MembresSection />
 

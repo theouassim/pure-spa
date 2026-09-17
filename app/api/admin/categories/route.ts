@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { syncServiceCategories } from "@/lib/service-categories";
 
 export async function GET() {
-  const { data, error } = await supabaseAdmin
-    .from("service_categories")
-    .select("nom, ouverte_par_defaut, position")
-    .order("position");
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    const categories = await syncServiceCategories();
+    return NextResponse.json({ categories });
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
-
-  return NextResponse.json({ categories: data ?? [] });
 }
 
 export async function POST(request: NextRequest) {

@@ -19,7 +19,7 @@ export interface ServiceRow {
   created_at: string;
 }
 
-export function ServicesSection() {
+export function ServicesSection({ onCatalogChange }: { onCatalogChange?: () => void }) {
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -65,6 +65,7 @@ export function ServicesSection() {
       return;
     }
     fetchServices();
+    onCatalogChange?.();
   }
 
   return (
@@ -137,7 +138,7 @@ export function ServicesSection() {
           service={editingService}
           categories={categories}
           onClose={() => setShowForm(false)}
-          onSaved={() => { setShowForm(false); fetchServices(); }}
+          onSaved={() => { setShowForm(false); fetchServices(); onCatalogChange?.(); }}
         />
       )}
     </div>

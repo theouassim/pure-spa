@@ -9,22 +9,30 @@ interface CategoryRow {
   position: number;
 }
 
-export function CategoriesSection() {
+export function CategoriesSection({ refreshKey = 0 }: { refreshKey?: number }) {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    fetchCategories(refreshKey === 0);
+  }, [refreshKey]);
 
-  async function fetchCategories() {
-    setLoading(true);
-    const res = await fetch("/api/admin/categories");
-    const data = await res.json();
-    setCategories(data.categories ?? []);
-    setLoading(false);
+  async function fetchCategories(showLoader: boolean) {
+    if (showLoader) setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/categories");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setCategories(data.categories ?? []);
+    } catch (e) {
+      setError((e as Error).message || "Impossible de charger les catégories.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function toggleOpen(nom: string) {
@@ -56,6 +64,7 @@ export function CategoriesSection() {
 
   async function handleSave() {
     setSaving(true);
+    setError(null);
     const res = await fetch("/api/admin/categories", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -65,6 +74,9 @@ export function CategoriesSection() {
     if (res.ok) {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error ?? "Erreur lors de la sauvegarde.");
     }
   }
 
@@ -72,6 +84,14 @@ export function CategoriesSection() {
     return (
       <div className="rounded-lg border border-border bg-bg-card p-4">
         <p className="text-sm text-text-muted">Chargement des catégories...</p>
+      </div>
+    );
+  }
+
+  if (error && categories.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-bg-card p-4">
+        <p className="text-sm text-error">{error}</p>
       </div>
     );
   }
@@ -85,7 +105,6 @@ export function CategoriesSection() {
         </div>
         <p className="text-xs text-text-muted">
           Les catégories apparaîtront ici une fois que vous aurez créé des services.
-          Exécutez la migration 022 pour initialiser la table.
         </p>
       </div>
     );
@@ -110,6 +129,7 @@ export function CategoriesSection() {
       <p className="text-xs text-text-muted mb-3">
         Ordre et état par défaut (ouvert/fermé) des catégories dans le tunnel de réservation client.
       </p>
+      {error && <p className="text-xs text-error mb-3">{error}</p>}
 
       <div className="space-y-1">
         {categories.map((cat, idx) => (
