@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     promises.push(
       sendBookingConfirmation(
         { id: result.bookingId, start_at: slotStart.toISOString(), montant: service.prix, statut_paiement: "en_attente" },
-        { nom: contact.nom, email: contact.email },
+        { nom: contact.nom, email: contact.email, telephone: contact.telephone },
         service
       ).catch((err) => console.error("[book-onsite] email failed:", err))
     );

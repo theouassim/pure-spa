@@ -37,7 +37,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .single();
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("nom, email")
+    .select("nom, email, telephone")
     .eq("id", data.client_id)
     .single();
 
