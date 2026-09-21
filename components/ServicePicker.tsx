@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Info, Phone } from "lucide-react";
 import type { ServiceData } from "./BookingFunnel";
 
 interface CategoryConfig {
@@ -53,7 +53,35 @@ export function ServicePicker({ services, telephoneContact, loading, categories,
   });
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      <div className="rounded-lg border border-primary/20 bg-accent-light/40 p-4">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
+            <Info size={15} className="text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-text mb-2">Informations importantes</h3>
+            <p className="text-xs leading-relaxed text-text-muted">
+              Afin de vous offrir une expérience optimale et des résultats adaptés à vos besoins,
+              nous vous invitons à vous présenter <strong className="text-text font-medium">sans bain d&apos;huile préalable</strong>.
+              Les extensions capillaires ne sont pas compatibles avec nos soins, afin de préserver
+              la qualité du protocole et des résultats. Nous vous recommandons d&apos;arriver{" "}
+              <strong className="text-text font-medium">5 minutes avant votre rendez-vous</strong>,
+              afin de vous installer et vous changer en toute tranquillité, sans impacter la durée de votre soin.
+            </p>
+            <div className="mt-2.5 flex items-center gap-2">
+              <Phone size={13} className="text-primary shrink-0" />
+              <span className="text-xs text-text-muted">
+                Réservation par téléphone au{" "}
+                <a href="tel:0973380575" className="text-primary font-medium hover:text-primary-dark transition-colors">
+                  09 73 38 05 75
+                </a>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {sortedCategories.map((categorie, idx) => (
         <CategoryAccordion
           key={categorie}
