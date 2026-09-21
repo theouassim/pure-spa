@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { track } from "@/lib/tracking";
+import type { BookingContact } from "@/lib/contact";
 import { useAdsTracking } from "@/hooks/useAdsTracking";
 import { ServicePicker } from "./ServicePicker";
 import { SlotPicker } from "./SlotPicker";
@@ -23,11 +24,7 @@ export interface SlotData {
   end: string;
 }
 
-export interface ContactData {
-  nom: string;
-  email: string;
-  telephone: string;
-}
+export type ContactData = BookingContact;
 
 interface CategoryConfig {
   nom: string;

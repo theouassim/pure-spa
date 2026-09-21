@@ -17,6 +17,7 @@ export interface BookingEmailData {
   bookingId: string;
   clientNom: string;
   clientEmail: string | null;
+  clientTelephone: string | null;
   serviceNom: string;
   date: string;
   heure: string;
@@ -71,7 +72,7 @@ function formatDate(isoDate: string): { date: string; heure: string; dateShort: 
 
 export function buildEmailData(
   booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
-  client: { nom: string; email: string | null },
+  client: { nom: string; email: string | null; telephone?: string | null },
   service: { nom: string; duree_minutes: number }
 ): BookingEmailData {
   const { date, heure } = formatDate(booking.start_at);
@@ -79,6 +80,7 @@ export function buildEmailData(
     bookingId: booking.id,
     clientNom: client.nom,
     clientEmail: client.email,
+    clientTelephone: client.telephone ?? null,
     serviceNom: service.nom,
     date,
     heure,
@@ -230,6 +232,7 @@ function confirmationAdminHtml(data: BookingEmailData): string {
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
       ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${data.clientTelephone ? detailRow("Téléphone", data.clientTelephone) : ""}
       ${detailRow("Soin", data.serviceNom)}
       ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
       ${detailRow("Heure", data.heure)}
@@ -265,6 +268,7 @@ function annulationAdminHtml(data: BookingEmailData): string {
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${data.clientTelephone ? detailRow("Téléphone", data.clientTelephone) : ""}
       ${detailRow("Soin", data.serviceNom)}
       ${detailRow("Date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
       ${detailRow("Heure", data.heure)}
@@ -300,6 +304,7 @@ function modificationAdminHtml(data: BookingEmailData): string {
 
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       ${detailRow("Cliente", `${data.clientNom}${data.clientEmail ? ` &middot; ${data.clientEmail}` : ""}`)}
+      ${data.clientTelephone ? detailRow("Téléphone", data.clientTelephone) : ""}
       ${detailRow("Soin", data.serviceNom)}
       ${detailRow("Nouvelle date", `<span style="text-transform:capitalize;">${data.date}</span>`)}
       ${detailRow("Heure", data.heure)}
@@ -353,7 +358,7 @@ async function isEmailAlreadySent(bookingId: string, field: EmailFlag): Promise<
 
 export async function sendBookingConfirmation(
   booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
-  client: { nom: string; email: string | null },
+  client: { nom: string; email: string | null; telephone?: string | null },
   service: { nom: string; duree_minutes: number }
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
@@ -396,7 +401,7 @@ export async function sendBookingConfirmation(
 
 export async function sendBookingCancellation(
   booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
-  client: { nom: string; email: string | null },
+  client: { nom: string; email: string | null; telephone?: string | null },
   service: { nom: string; duree_minutes: number }
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
@@ -438,7 +443,7 @@ export async function sendBookingCancellation(
 
 export async function sendBookingModification(
   booking: { id: string; start_at: string; montant: number | null; statut_paiement: string },
-  client: { nom: string; email: string | null },
+  client: { nom: string; email: string | null; telephone?: string | null },
   service: { nom: string; duree_minutes: number }
 ): Promise<void> {
   if (!process.env.RESEND_API_KEY) return;
@@ -530,7 +535,7 @@ export async function sendVerificationAlert(input: VerificationAlertInput): Prom
 
   const { data: client } = await supabaseAdmin
     .from("clients")
-    .select("nom, email")
+    .select("nom, email, telephone")
     .eq("id", input.clientId)
     .single();
 
@@ -547,6 +552,7 @@ export async function sendVerificationAlert(input: VerificationAlertInput): Prom
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
       ${detailRow("Cliente", client?.nom ?? "Inconnue")}
       ${detailRow("Email", client?.email ?? "—")}
+      ${client?.telephone ? detailRow("Téléphone", client.telephone) : ""}
       ${detailRow("Soin", service?.nom ?? "—")}
       ${detailRow("Date", `<span style="text-transform:capitalize;">${date}</span>`)}
       ${detailRow("Heure", heure)}
